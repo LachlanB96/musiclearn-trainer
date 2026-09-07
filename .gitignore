@@ -1,0 +1,17 @@
+# Build output (build.cmd builds under %LOCALAPPDATA%\MusicLearnTrainer, but keep in-tree builds out too)
+build/
+out/
+cmake-build-*/
+*.log
+
+# IDE / editor
+.vs/
+.vscode/
+.idea/
+CMakeUserPresets.json
+*.user
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
