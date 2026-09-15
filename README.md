@@ -166,6 +166,7 @@ package under `%USERPROFILE%\Documents\git\_deps\webview2`. Either put them ther
 ```
 build.cmd          # configures with CMake + Ninja, builds VST3 and Standalone
 install.cmd        # copies the VST3 into C:\Program Files\Common Files\VST3\ (asks for admin)
+python package.py  # zips the built VST3 + INSTALL.txt into dist/ for a GitHub release
 ```
 
 Build output goes to `%LOCALAPPDATA%\MusicLearnTrainer\build\MusicLearnTrainer_artefacts\Release\`
@@ -210,6 +211,7 @@ change to add a song.
 CMakeLists.txt        JUCE plugin definition (VST3 + Standalone)
 build.cmd             one-shot MSVC + CMake + Ninja build
 install.cmd/.ps1      elevated copy into the system VST3 folder
+package.py            release zip (dist/) from the build output
 Source/               thin C++ shell: MIDI FIFO, host transport snapshot + WebView2 host
 ui/index.html         all UI and learning logic
 ui/Bravura.woff2      music notation font (SIL OFL)
