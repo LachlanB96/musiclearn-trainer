@@ -15,3 +15,6 @@ CMakeUserPresets.json
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Release zips (attached to GitHub releases, not committed)
+dist/
