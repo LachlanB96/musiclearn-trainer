@@ -92,6 +92,20 @@ void TrainerEditor::resized()
 
 void TrainerEditor::timerCallback()
 {
+    // Transport first, then notes: the page maps note times onto the host's beat grid using the latest snapshot.
+    {
+        const auto tr = processor.getTransport();
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("t",       tr.timeMs);
+        o->setProperty ("ppq",     tr.ppq);
+        o->setProperty ("bpm",     tr.bpm);
+        o->setProperty ("num",     tr.numerator);
+        o->setProperty ("den",     tr.denominator);
+        o->setProperty ("playing", tr.playing);
+        o->setProperty ("host",    tr.hasHost);
+        web.emitEventIfBrowserIsVisible ("transport", juce::var (o));
+    }
+
     if (processor.popEvents (scratch) == 0)
         return;
 
@@ -128,6 +142,28 @@ void TrainerEditor::handleUiEvent (const juce::var& payload)
     else if (type == "restore")
     {
         setMaximised (false);
+    }
+    else if (type == "guide")
+    {
+        std::vector<ScheduledNote> notes;
+
+        if (const auto* arr = payload.getProperty ("notes", juce::var()).getArray())
+            for (const auto& v : *arr)
+            {
+                ScheduledNote n;
+                n.note     = (int) v.getProperty ("n", 0);
+                n.velocity = (int) v.getProperty ("v", 0);
+                n.channel  = (int) v.getProperty ("ch", 2);
+                n.on       = (bool) v.getProperty ("on", false);
+                n.timeMs   = (double) v.getProperty ("t", 0.0);
+                notes.push_back (n);
+            }
+
+        processor.scheduleNotes (notes);
+    }
+    else if (type == "guideOff")
+    {
+        processor.cancelGuide();
     }
     else if (type == "log")
     {

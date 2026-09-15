@@ -5,7 +5,8 @@
 
 /**
     The editor is a WebView2 panel showing ui/index.html (embedded as binary data).
-    MIDI events are pushed to the page as a "midi" event; the page sends "ui" events back.
+    MIDI events are pushed to the page as a "midi" event and the host transport as a "transport"
+    event (60 Hz); the page sends "ui" events back.
 */
 class TrainerEditor final : public juce::AudioProcessorEditor,
                             private juce::Timer

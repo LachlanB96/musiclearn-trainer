@@ -46,6 +46,15 @@ main { display:grid; grid-template-columns:minmax(0,1fr) 330px; gap:12px; paddin
 .mastery { height:6px; background:var(--panel2); border-radius:3px; margin-top:8px; overflow:hidden; }
 .mastery i { display:block; height:100%; background:var(--accent); width:0; transition:width .3s; }
 .levelName { color:var(--muted); font-size:12px; margin-top:6px; }
+.songRow { display:flex; gap:8px; align-items:center; margin-top:8px; font-size:13px; flex-wrap:wrap; }
+.songRow select { flex:1; min-width:0; }
+.songRow > label { color:var(--muted); }
+.songRow .chk { display:flex; align-items:center; gap:4px; cursor:pointer; }
+.songRow input[type=range] { flex:1; min-width:60px; }
+.songRow button { flex:1; }
+.songRow button.small { flex:0 0 auto; padding:4px 8px; }
+.songRow button:disabled { opacity:.6; cursor:default; }
+.songRow select.small { flex:0 1 auto; }
 .prompt { min-height:120px; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:6px; }
 .prompt .huge { font-size:56px; font-weight:700; line-height:1.05; }
 .prompt .big { font-size:26px; font-weight:600; }
@@ -92,6 +101,7 @@ textarea.md { width:100%; height:120px; background:var(--panel2); color:var(--te
     <button data-mode="read">Read</button>
     <button data-mode="chord">Chords</button>
     <button data-mode="hands">Two hands</button>
+    <button data-mode="song">Songs</button>
     <button data-mode="mirror">Mirror</button>
   </nav>
   <div class="spacer"></div>
@@ -117,6 +127,17 @@ textarea.md { width:100%; height:120px; background:var(--panel2); color:var(--te
       <div class="levelName" id="masteryText"></div>
     </div>
     <div class="banner" id="levelUp"><span>Level up available</span><button id="btnLevelUp">Go to next level</button></div>
+    <div class="card" id="songCard" style="display:none">
+      <h3>Play-along</h3>
+      <div class="songRow"><button class="primary" id="btnSongPlay">▶ Play <small>(Space)</small></button><button id="btnSongRestart">⟲ Restart <small>(Enter)</small></button></div>
+      <div class="songRow"><label for="songFrom">From</label><select id="songFrom"></select><label class="chk"><input type="checkbox" id="songLoop"> loop it</label></div>
+      <div class="songRow"><label for="songBpm">Tempo</label><button id="bpmDown" class="small" title="5 bpm slower">−5</button><input type="number" id="songBpm" min="30" max="220" step="1" style="width:66px"><button id="bpmUp" class="small" title="5 bpm faster">+5</button><span id="songBpmInfo" class="levelName" style="margin:0"></span></div>
+      <div class="songRow"><label class="chk" title="The plugin plays the part through its MIDI output (channel 2), so your piano track sounds it"><input type="checkbox" id="songGuide"> Guide plays the part</label><input type="range" id="songGuideVol" min="0" max="100" step="5" title="Guide volume"><span id="songGuideVolText"></span><label class="chk" title="The harder you play, the quieter the guide gets"><input type="checkbox" id="songGuideDuck"> fades as I play</label></div>
+      <div class="songRow"><label for="songView">Staff</label><select id="songView"><option value="full">Notes + chord symbols</option><option value="notes">Notes only</option><option value="slashes">Chord symbols + rhythm slashes</option></select></div>
+      <div class="songRow"><label for="songBars">Bars per line</label><select id="songBars" class="small"><option value="0">Auto</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select><label class="chk"><input type="checkbox" id="songFinger"> Fingering</label><label class="chk"><input type="checkbox" id="songKeys"> Highlight keys</label></div>
+      <div class="songRow"><label class="chk"><input type="checkbox" id="songMetro"> Metronome</label><label class="chk" id="songFollowRow"><input type="checkbox" id="songFollow"> Follow Live's transport</label></div>
+      <div class="levelName" id="songInfo"></div>
+    </div>
     <div class="card"><div class="prompt" id="prompt"></div></div>
     <div class="card"><div class="feedback" id="feedback"></div></div>
     <div class="card stats" id="stats"></div>
@@ -196,19 +217,19 @@ function parseName(name) { const letter = name[0]; const acc = name.length > 1 ?
 function scaleOf(key) { const sig = keySig(key), t = parseName(key), i0 = LETTERS.indexOf(t.letter); return [...Array(7)].map((_, k) => { const li = (i0 + k) % 7, letter = LETTERS[li], acc = sig[letter] || 0; return { letter, acc, pc: (LETTER_PC[li] + acc + 12) % 12, name: letter + ACC[acc] }; }); }
 
 /** Spell a MIDI note in a key: letter, accidental, what accidental sign to draw (if any), staff step. */
-function spell(midi, key) {
+function spell(midi, key, prefer) {
   const pc = midi % 12, oct = Math.floor(midi / 12) - 1;
   let letter, acc, show = null;
   const dia = scaleOf(key).find(d => d.pc === pc);
   if (dia) { letter = dia.letter; acc = dia.acc; }
   else if (LETTER_PC.includes(pc)) { letter = LETTERS[LETTER_PC.indexOf(pc)]; acc = 0; show = 'natural'; }
-  else if ((KEYS[key] || 0) >= 0) { letter = LETTERS[LETTER_PC.indexOf(pc - 1)]; acc = 1; show = 'sharp'; }
+  else if (prefer ? prefer === 'sharp' : (KEYS[key] || 0) >= 0) { letter = LETTERS[LETTER_PC.indexOf(pc - 1)]; acc = 1; show = 'sharp'; }
   else { letter = LETTERS[LETTER_PC.indexOf((pc + 1) % 12)]; acc = -1; show = 'flat'; }
   const step = oct * 7 + LETTERS.indexOf(letter);
   return { midi, pc, oct, letter, acc, show, step, name: letter + ACC[acc] + dispOct(oct), pcName: letter + ACC[acc] };
 }
 function dispOct(oct) { return oct + (S.settings.octaveNaming === 'ableton' ? -1 : 0); }
-function pcNameIn(pc, key) { return spell(60 + pc, key).pcName; }
+function pcNameIn(pc, key, prefer) { return spell(60 + pc, key, prefer).pcName; }
 
 const CHORD_TYPES = {
   maj:  { iv:[0,4,7],     sym:'',      long:'major' },
@@ -222,6 +243,13 @@ const CHORD_TYPES = {
   dim7: { iv:[0,3,6,9],   sym:'dim7',  long:'diminished seventh' },
   sus2: { iv:[0,2,7],     sym:'sus2',  long:'suspended second' },
   sus4: { iv:[0,5,7],     sym:'sus4',  long:'suspended fourth' },
+  '7sus4': { iv:[0,5,7,10], sym:'7sus4', long:'seventh suspended fourth' },
+  add9: { iv:[0,4,7,14],  sym:'add9',  long:'added ninth' },
+  '6':  { iv:[0,4,7,9],   sym:'6',     long:'major sixth' },
+  m6:   { iv:[0,3,7,9],   sym:'m6',    long:'minor sixth' },
+  '9':  { iv:[0,4,7,10,14], sym:'9',   long:'dominant ninth' },
+  m9:   { iv:[0,3,7,10,14], sym:'m9',  long:'minor ninth' },
+  maj9: { iv:[0,4,7,11,14], sym:'maj9', long:'major ninth' },
 };
 const ID_ORDER = ['maj','min','7','maj7','m7','m7b5','dim','dim7','aug','sus4','sus2'];
 const DIATONIC_TRIADS = ['maj','min','min','maj','maj','min','dim'];
@@ -287,6 +315,7 @@ const LEVELS = {
     { id:'h6', name:'I–V–vi–IV · all keys', keys:ALL_KEYS, progression:[1,5,6,4] },
   ],
   mirror: [ { id:'m1', name:'Free play — shows what you play' } ],
+  song: [],   // filled from SONGS at boot
 };
 const THRESH = { read:{ n:20, acc:0.9, rt:2500 }, chord:{ n:16, acc:0.9, rt:4000 }, hands:{ n:16, acc:0.9, rt:5000 } };
 
@@ -334,11 +363,12 @@ const S = {
   shownAt:0, wrongCount:0, hintShown:false, guided:false, hintTimer:null, awaitingRelease:false, advanceTimer:null,
   recent:[], due:[], lastId:null, seq:{ i:0, k:0 }, queue:[], maximised:false,
   session:null, useBravura:false, midiInputs:[], flashTimer:null,
+  song:{ tempo:100, metronome: HOST === 'browser', follow: HOST === 'plugin', loop:false, view:'full', barsPerLine:0, fingering:true, keys:true, guide:false, guideVol:60, guideDuck:true }, songBest:{},
 };
 function load(k, d) { try { const v = localStorage.getItem('mlt.' + k); return v ? JSON.parse(v) : d; } catch (e) { return d; } }
 function save(k, v) { try { localStorage.setItem('mlt.' + k, JSON.stringify(v)); } catch (e) {} }
 function log(msg) { console.log(msg); if (HOST === 'plugin') { try { window.__JUCE__.backend.emitEvent('ui', { type:'log', msg:String(msg) }); } catch (e) {} } }
-function newSession() { S.session = { start:Date.now(), results:[], streak:0, bestStreak:0 }; }
+function newSession() { S.session = { start:Date.now(), results:[], songRuns:[], streak:0, bestStreak:0 }; }
 
 // ---------------------------------------------------------------- staff rendering
 const SP = 10, TREBLE_BOTTOM = 110, BASS_BOTTOM = 230, CLEF_X = 30, KEYSIG_X = 62;
@@ -375,7 +405,7 @@ function drawStaff(key, notes) {
   const columns = [...new Set(notes.map(nt => nt.dx || 0))].sort((a, b) => a - b);
   for (const dx of columns) for (const clef of ['treble', 'bass']) {
     const cx = noteX + dx;
-    const group = notes.filter(nt => (nt.dx || 0) === dx && (nt.clef || (nt.midi >= 60 ? 'treble' : 'bass')) === clef).map(nt => ({ ...nt, sp: spell(nt.midi, nt.key || key) }));
+    const group = notes.filter(nt => (nt.dx || 0) === dx && (nt.clef || (nt.midi >= 60 ? 'treble' : 'bass')) === clef).map(nt => ({ ...nt, sp: spell(nt.midi, nt.key || key, nt.prefer) }));
     if (!group.length) continue;
     group.sort((a, b) => a.sp.step - b.sp.step);
     const dim = group.every(nt => nt.state === 'preview');
@@ -438,7 +468,7 @@ function ensurePianoRange(m) { const [lo, hi] = pianoRange; if (m >= lo && m <= 
 // ---------------------------------------------------------------- sound (browser only)
 const synth = { ctx:null, voices:new Map(),
   ensure() { if (!this.ctx) { try { this.ctx = new (window.AudioContext || window.webkitAudioContext)(); this.master = this.ctx.createGain(); this.master.gain.value = 0.3; this.master.connect(this.ctx.destination); } catch (e) { return false; } } if (this.ctx.state === 'suspended') this.ctx.resume(); return true; },
-  on(n, vel) { if (!S.settings.sound || !this.ensure()) return; this.off(n); const c = this.ctx, t = c.currentTime, f = 440 * Math.pow(2, (n - 69) / 12), g = c.createGain(), lp = c.createBiquadFilter();
+  on(n, vel, force) { if ((!S.settings.sound && !force) || !this.ensure()) return; this.off(n); const c = this.ctx, t = c.currentTime, f = 440 * Math.pow(2, (n - 69) / 12), g = c.createGain(), lp = c.createBiquadFilter();
     lp.type = 'lowpass'; lp.frequency.value = 1200 + vel * 40; g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.5 * (vel / 127), t + 0.006); g.gain.exponentialRampToValueAtTime(0.18 * (vel / 127) + 0.001, t + 0.6);
     const oscs = [[1, 'triangle', 1], [2, 'sine', 0.25], [3, 'sine', 0.08]].map(([mul, type, amp]) => { const o = c.createOscillator(), og = c.createGain(); o.type = type; o.frequency.value = f * mul; og.gain.value = amp; o.connect(og); og.connect(lp); o.start(t); return o; });
     lp.connect(g); g.connect(this.master); this.voices.set(n, { g, oscs }); },
@@ -449,6 +479,7 @@ const synth = { ctx:null, voices:new Map(),
 function setMidiStatus(ok, text) { document.getElementById('midiDot').className = 'dot' + (ok ? ' ok' : ''); document.getElementById('midiText').textContent = text; const ov = document.getElementById('overlayStatus'); if (ov) ov.textContent = text; document.getElementById('midiReconnect').style.display = (ok || HOST === 'plugin') ? 'none' : ''; }
 function initMidi() {
   if (HOST === 'plugin') {
+    window.__JUCE__.backend.addEventListener('transport', tr => { Object.assign(SONG.transport, tr, { perfAt: performance.now(), seen:true }); });
     window.__JUCE__.backend.addEventListener('midi', events => { for (const e of events) { if (S.settings.ignoreCh10 && e.ch === 10) continue; if (e.on) noteOn(e.n, e.v, e.t); else noteOff(e.n, e.t); } });
     setMidiStatus(true, 'MIDI from Ableton'); return;
   }
@@ -476,8 +507,8 @@ let pcOctave = 60; const pcDown = new Map();
 window.addEventListener('keydown', e => {
   if (e.target && /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
   if (document.querySelector('dialog[open]')) return;
-  if (e.code === 'Space') { e.preventDefault(); showHint(true); return; }
-  if (e.code === 'Enter') { e.preventDefault(); skipItem(); return; }
+  if (e.code === 'Space') { e.preventDefault(); if (S.mode === 'song') songPlay(); else showHint(true); return; }
+  if (e.code === 'Enter') { e.preventDefault(); if (S.mode === 'song') songRestart(); else skipItem(); return; }
   if (e.code === 'Escape') { endSession(); return; }
   if (e.code === 'KeyZ') { pcOctave = Math.max(24, pcOctave - 12); return; } if (e.code === 'KeyX') { pcOctave = Math.min(96, pcOctave + 12); return; }
   if (e.repeat || !(e.code in PC_KEYS)) return;
@@ -490,12 +521,14 @@ function noteOn(n, vel, tClock) {
   S.held.set(n, { tPerf, tClock: tClock == null ? tPerf : tClock });
   synth.on(n, vel); ensurePianoRange(n);
   if (S.mode === 'mirror') { renderMirror(); paintPiano(); return; }
+  if (S.mode === 'song') { GUIDE.velEma = GUIDE.velEma * 0.6 + vel * 0.4; GUIDE.lastUser = performance.now(); songNote(n, true, S.held.get(n).tClock); refresh(); return; }
   if (S.item && !S.awaitingRelease) MODES[S.mode].onNote(n, true);
   refresh();
 }
 function noteOff(n) {
   S.held.delete(n); S.badHeld.delete(n); synth.off(n);
   if (S.mode === 'mirror') { renderMirror(); paintPiano(); return; }
+  if (S.mode === 'song') { songNote(n, false); refresh(); return; }
   if (S.awaitingRelease) { if (S.held.size === 0) { S.awaitingRelease = false; clearTimeout(S.advanceTimer); S.advanceTimer = setTimeout(nextItem, S.settings.nextDelay); } refresh(); return; }
   if (S.item) MODES[S.mode].onNote(n, false);
   refresh();
@@ -589,6 +622,7 @@ function nextItem() {
   clearTimeout(S.hintTimer); clearTimeout(S.advanceTimer);
   S.okKeys = new Set(); S.badHeld = new Set(); S.hintKeys = new Set(); S.wrongCount = 0; S.hintShown = false; S.awaitingRelease = false; S.lastWrong = null;
   if (S.mode === 'mirror') { S.item = null; MODES.mirror.render(); setFeedback('', ''); renderMirror(); paintPiano(); return; }
+  if (S.mode === 'song') { S.item = null; return; }
   const item = S.queue.length ? S.queue.shift() : takeItem(); S.item = item;
   if (!item) { setPrompt('<div class="big">No items</div><div class="sub">This level has nothing in range for your keyboard size — pick another level or change the keyboard size in Settings.</div>'); drawStaff('C', []); return; }
   fillQueue();
@@ -620,7 +654,7 @@ function pickItem() {
 function weightOf(item) { const s = S.stats[item.id]; if (!s || !s.seen) return 1.6; const err = Math.min(1, (s.wrong + 0.5 * s.hint) / s.seen); const hrs = (Date.now() - (s.last || 0)) / 3.6e6; return 0.6 + 3 * err + Math.min(1.5, hrs / 24); }
 
 function showHint(manual) {
-  if (!S.item || S.okKeys.size) return;
+  if (!S.item || S.okKeys.size || !MODES[S.mode]) return;
   if (!S.hintShown) { S.hintShown = true; MODES[S.mode].hint(S.item); }
   if (manual && !S.guided) setFeedback('Answer shown — this one will come back soon.', 'hint');
   refresh();
@@ -653,7 +687,8 @@ function recordResult(item, res) {
 function skipItem() { if (!S.item || S.mode === 'mirror') return; S.due.push({ id:S.item.id, left:Math.max(1, 4 - S.settings.preview) }); nextItem(); }
 
 function refresh() {
-  if (S.item && S.mode !== 'mirror') drawStaff(S.item.key, MODES[S.mode].staffNotes(S.item));
+  if (S.mode === 'song') { drawLiveNotes(); }
+  else if (S.item && S.mode !== 'mirror') drawStaff(S.item.key, MODES[S.mode].staffNotes(S.item));
   paintPiano();
 }
 function renderMirror() {
@@ -661,6 +696,581 @@ function renderMirror() {
   drawStaff('C', held.map(m => ({ midi:m, key:'C', state:'played', label:true })));
   const name = identify(held);
   setPrompt(`<div class="huge">${name || (held.length === 1 ? spell(held[0], 'C').name : '')}</div><div class="sub">${held.length ? held.sort((a, b) => a - b).map(m => spell(m, 'C').name).join(' · ') : 'Play anything — it is drawn on the staff and named'}</div>`);
+}
+
+// ---------------------------------------------------------------- songs (play-along)
+/* A song is a chord chart, not a transcription: sections in playing order, each a list of bars.
+   A bar is a string of chord tokens separated by spaces. A token is a chord symbol with an
+   optional ":beats" (tokens without one share the bar's remaining beats equally); "%" repeats
+   the previous bar; a section with `like` replays a named section. A version turns the chart
+   into per-hand note events (what each hand plays, when, and for how long) from a rhythmic
+   pattern, at a given harmonic fidelity (`simplify`), voicing and default tempo. The events are
+   engraved on a grand staff (see "score rendering") and grouped into "hits" for scoring: pitches
+   (any inversion, LH below the split point) and timing against the beat. */
+const CHORD_SYMBOLS = { '':'maj', 'm':'min', 'min':'min', '-':'min', 'dim':'dim', '°':'dim', 'aug':'aug', '+':'aug', 'maj7':'maj7', 'M7':'maj7', '7':'7', 'm7':'m7', 'min7':'m7', '-7':'m7', 'm7b5':'m7b5', 'ø':'m7b5', 'ø7':'m7b5', 'dim7':'dim7', '°7':'dim7', 'sus2':'sus2', 'sus4':'sus4', 'sus':'sus4', '7sus4':'7sus4', '7sus':'7sus4', 'add9':'add9', '2':'add9', '6':'6', 'm6':'m6', '9':'9', 'm9':'m9', 'maj9':'maj9' };
+const SIMPLE_TRIAD = { maj:'maj', min:'min', dim:'dim', aug:'aug', maj7:'maj', '7':'maj', m7:'min', m7b5:'dim', dim7:'dim', sus2:'sus2', sus4:'sus4', '7sus4':'sus4', add9:'maj', '6':'maj', m6:'min', '9':'maj', m9:'min', maj9:'maj' };
+const HIT_COLOURS = { perfect:'#3ddc84', good:'#3ddc84', early:'#ffc857', late:'#ffc857', partial:'#ff9f2e', miss:'#ff5c5c', skip:'#596276' };
+/* Patterns: per hand, [offset in beats from the chord start, duration, what]. Slots past the end of a
+   chord are dropped and the last one is clipped, so a one-beat chord in a whole-note pattern becomes
+   a quarter note. RH "chord" = the voicing, "low" = its lowest note, "upper" = the notes above it. */
+const SONG_PATTERNS = {
+  block:   { rh:[[0,4,'chord']], lh:[[0,4,'bass']] },
+  pulse:   { rh:[[0,1,'chord'],[1,1,'chord'],[2,1,'chord'],[3,1,'chord']], lh:[[0,2,'bass'],[2,2,'bass']] },
+  ballad:  { rh:[[0,1.5,'chord'],[1.5,0.5,'chord'],[2,1.5,'chord'],[3.5,0.5,'chord']], lh:[[0,1,'bass'],[1,1,'fifth'],[2,1,'octave'],[3,1,'fifth']] },
+  eighths: { rh:[0,0.5,1,1.5,2,2.5,3,3.5].map((o, i) => [o, 0.5, i % 2 ? 'upper' : 'low']), lh:[[0,4,'bass']] },
+};
+const LH_FINGER = { bass:[5], fifth:[2], octave:[1] };
+
+function makeChord(rootName, type, bassName) {
+  const root = parseName(rootName), bass = bassName ? parseName(bassName) : root;
+  const pcs = [...new Set(CHORD_TYPES[type].iv.map(i => (root.pc + i) % 12))];
+  const prefer = /b/.test(rootName + (bassName || '')) ? 'flat' : /#/.test(rootName + (bassName || '')) ? 'sharp' : null;
+  return { rootName, rootPc:root.pc, type, bassName: bassName || null, bassPc:bass.pc, pcs, prefer, display: pretty(rootName) + CHORD_TYPES[type].sym + (bassName ? '/' + pretty(bassName) : '') };
+}
+function parseChord(sym) {
+  const m = /^([A-G][#b]?)([^/]*)(?:\/([A-G][#b]?))?$/.exec(sym.trim());
+  if (!m || !(m[2] in CHORD_SYMBOLS)) throw new Error('Unknown chord symbol: ' + sym);
+  return makeChord(m[1], CHORD_SYMBOLS[m[2]], m[3] || null);
+}
+/** simplify: 0 = as written · 1 = triads (sus kept) with the written bass note · 2 = plain triads, root in the bass. */
+function simplifyChord(ch, level) {
+  if (!level) return ch;
+  let type = SIMPLE_TRIAD[ch.type] || ch.type;
+  if (level >= 2 && (type === 'sus2' || type === 'sus4')) type = 'maj';
+  return makeChord(ch.rootName, type, level >= 2 ? null : ch.bassName);
+}
+function rootPosition(ch) { const root = 60 + ch.rootPc; return CHORD_TYPES[ch.type].iv.map(i => root + i); }
+/** Closed voicing above middle C whose notes move least from the previous chord (any inversion). */
+function voiceLead(ch, prev) {
+  if (!prev) return rootPosition(ch);
+  let best = null;
+  for (let r = 0; r < ch.pcs.length; r++) {
+    const rot = ch.pcs.slice(r).concat(ch.pcs.slice(0, r));
+    for (let base = 60; base <= 71; base++) {
+      if (base % 12 !== rot[0]) continue;
+      const notes = []; let m = base; for (const pc of rot) { while (m % 12 !== pc) m++; notes.push(m); m++; }
+      if (notes[notes.length - 1] > 81) continue;
+      const cost = notes.reduce((a, n) => a + Math.min(...prev.map(p => Math.abs(p - n))), 0) + Math.abs(notes[0] - 63) * 0.1;
+      if (!best || cost < best.cost) best = { cost, notes };
+    }
+  }
+  return best ? best.notes : rootPosition(ch);
+}
+/** Standard right-hand fingering for a closed chord: 1-3-5, or 1-2-5 when the top interval is a fourth or wider. */
+function chordFingering(notes) {
+  if (notes.length === 1) return [1];
+  if (notes.length === 2) return notes[1] - notes[0] >= 5 ? [1, 5] : [1, 3];
+  if (notes.length === 3) return notes[2] - notes[1] >= 5 ? [1, 2, 5] : [1, 3, 5];
+  return [1, 2, 3, 5].slice(0, notes.length);
+}
+function compileSong(song, v) {
+  const bpb = song.beats || 4, pat = SONG_PATTERNS[v.pattern], chords = [], bars = [], sections = [];
+  let beat = 0, prevBar = null;
+  for (const sec of song.sections) {
+    const src = sec.like ? song.sections.find(x => x.name === sec.like) : sec, start = beat, firstBar = bars.length + 1;
+    for (let barStr of src.bars) {
+      if (barStr === '%') barStr = prevBar; prevBar = barStr;
+      const toks = barStr.trim().split(/\s+/).map(t => { const i = t.lastIndexOf(':'); return i > 0 ? { sym:t.slice(0, i), d:+t.slice(i + 1) } : { sym:t, d:null }; });
+      const fixed = toks.reduce((a, t) => a + (t.d || 0), 0), free = toks.filter(t => t.d == null).length, share = free ? (bpb - fixed) / free : 0;
+      let b = beat;
+      for (const t of toks) { const dur = t.d != null ? t.d : share; chords.push({ ...simplifyChord(parseChord(t.sym), v.simplify), beat:b, dur, bar:bars.length + 1, section:sec.name }); b += dur; }
+      bars.push({ beat, n:bars.length + 1, section: bars.length + 1 === firstBar ? sec.name : null });
+      beat += bpb;
+    }
+    sections.push({ name:sec.name, beat:start, end:beat, bar:firstBar });
+  }
+  // per-hand note events from the pattern
+  const events = { treble:[], bass:[] }; let prevRh = null;
+  for (const ch of chords) {
+    const bass = 36 + ch.bassPc;                       // C2–B2: always below the split point, the octave stays below middle C
+    const voicing = v.voicing === 'lead' ? voiceLead(ch, prevRh) : rootPosition(ch); prevRh = voicing;
+    const end = ch.beat + ch.dur;
+    for (const [off, dur, what] of pat.rh) {
+      if (off >= ch.dur - 1e-9) continue;
+      const notes = what === 'low' ? [voicing[0]] : what === 'upper' ? voicing.slice(1) : voicing;
+      const finger = what === 'low' ? [1] : what === 'upper' ? chordFingering(voicing).slice(1) : chordFingering(voicing);
+      events.treble.push({ beat: ch.beat + off, dur: Math.min(dur, end - ch.beat - off), notes, finger, chord: ch, prefer: ch.prefer });
+    }
+    for (const [off, dur, what] of pat.lh) {
+      if (off >= ch.dur - 1e-9) continue;
+      const m = what === 'bass' ? bass : what === 'fifth' && ch.bassPc === ch.rootPc ? bass + 7 : bass + 12;   // slash chords alternate bass and octave instead of a fifth
+      events.bass.push({ beat: ch.beat + off, dur: Math.min(dur, end - ch.beat - off), notes:[m], finger: LH_FINGER[what], chord: ch, prefer: ch.prefer });
+    }
+  }
+  // hits: everything that starts on the same beat, both hands
+  const hitMap = new Map();
+  const at = (b, f) => { const k = Math.round(b * 1000); let h = hitMap.get(k); if (!h) { h = { beat:b, lh:null, lhMidi:null, rh:[], rhMidi:[], chord:null }; hitMap.set(k, h); } f(h); };
+  for (const e of events.treble) at(e.beat, h => { h.rh = [...new Set(e.notes.map(m => m % 12))]; h.rhMidi = e.notes; h.chord = e.chord; e.hit = h; });
+  for (const e of events.bass) at(e.beat, h => { h.lh = e.notes[0] % 12; h.lhMidi = e.notes[0]; h.chord = h.chord || e.chord; e.hit = h; });
+  const hits = [...hitMap.values()].sort((a, b) => a.beat - b.beat);
+  hits.forEach((h, i) => { h.i = i; h.all = new Set([...h.rh, ...(h.lh != null ? [h.lh] : [])]); h.res = null; h.notes = []; });
+  let gap = Infinity; for (let i = 1; i < hits.length; i++) gap = Math.min(gap, hits[i].beat - hits[i - 1].beat);
+  return { song, v, chords, bars, sections, events, hits, total:beat, bpb, gap: isFinite(gap) ? gap : 1 };
+}
+
+// runtime state for song mode
+const SONG = { comp:null, running:false, startClock:0, offsetBeat:0, from:0, loop:null, bpm:0, next:0, raf:0, lastPos:null, metroBeat:null, shownHit:null, promptHtml:'', tally:null, hostWasPlaying:false,
+  transport:{ t:0, ppq:0, bpm:0, num:4, den:4, playing:false, host:false, perfAt:0, seen:false } };
+const newTally = () => ({ scored:0, full:0, offs:[], ratings:{}, misses:[] });
+
+/** The note-timestamp clock: the audio clock inside the plugin, performance.now() in a browser. */
+function clockNow() { const tr = SONG.transport; return (HOST === 'plugin' && tr.seen) ? tr.t + (performance.now() - tr.perfAt) : performance.now(); }
+function clockToPerf(tClock) { const tr = SONG.transport; return (HOST === 'plugin' && tr.seen) ? tClock - tr.t + tr.perfAt : tClock; }
+function songFollowing() { return HOST === 'plugin' && S.song.follow && SONG.transport.host; }
+function songBpm() { return songFollowing() && SONG.transport.bpm > 0 ? SONG.transport.bpm : SONG.comp.song.bpm * S.song.tempo / 100; }
+function songActive() { return songFollowing() ? SONG.transport.playing : SONG.running; }
+/** Song position in beats for a moment on the note clock (null when nothing is running). */
+function songBeatAt(tClock) {
+  if (songFollowing()) { const tr = SONG.transport; return tr.ppq + (tr.playing ? (tClock - tr.t) * tr.bpm / 60000 : 0); }
+  if (!SONG.running) return null;
+  return SONG.offsetBeat + (tClock - SONG.startClock) * SONG.bpm / 60000;
+}
+function songWindow() { return Math.min(SONG.comp.gap / 2, 300 * songBpm() / 60000); }   // beats either side of a hit that count as an attempt at it
+
+function songLoad(level) {
+  SONG.running = false; cancelAnimationFrame(SONG.raf); SONG.raf = 0;
+  SONG.comp = compileSong(level.song, level.v); SONG.tally = newTally(); SONG.lastPos = null; SONG.hostWasPlaying = false; SONG.promptHtml = ''; SONG.shownHit = null;
+  S.song.view = level.v.view || 'full'; S.song.keys = !!level.v.keys; S.song.tempo = level.v.tempo; save('song', S.song);
+  S.okKeys = new Set(); S.badHeld = new Set(); S.hintKeys = new Set();
+  const from = document.getElementById('songFrom');
+  from.innerHTML = SONG.comp.sections.map(s => `<option value="${s.beat}">${s.name} (bar ${s.bar})</option>`).join('');
+  syncSongControls(); songSeek(0); setFeedback(level.v.desc, 'hint');
+  scoreReset(); drawScore(null);
+  SONG.raf = requestAnimationFrame(songFrame);
+}
+function syncSongControls() {
+  const following0 = songFollowing(), song = SONG.comp && SONG.comp.song;
+  if (song) { document.getElementById('songBpm').value = Math.round(following0 && SONG.transport.bpm > 0 ? SONG.transport.bpm : song.bpm * S.song.tempo / 100); document.getElementById('songBpmInfo').textContent = following0 ? "Live's tempo" : `song: ${song.bpm}`; }
+  document.getElementById('songGuide').checked = !!S.song.guide; document.getElementById('songGuideVol').value = S.song.guideVol; document.getElementById('songGuideVolText').textContent = S.song.guideVol + '%';
+  document.getElementById('songGuideDuck').checked = !!S.song.guideDuck;
+  document.getElementById('songMetro').checked = !!S.song.metronome; document.getElementById('songView').value = S.song.view || 'full';
+  document.getElementById('songBars').value = String(S.song.barsPerLine || 0); document.getElementById('songFinger').checked = !!S.song.fingering; document.getElementById('songKeys').checked = !!S.song.keys;
+  document.getElementById('songLoop').checked = !!S.song.loop; document.getElementById('songFollow').checked = !!S.song.follow;
+  document.getElementById('songFollowRow').style.display = HOST === 'plugin' ? '' : 'none';
+  const following = songFollowing(), c = SONG.comp;
+  document.getElementById('btnSongPlay').innerHTML = following ? 'Play in Ableton' : SONG.running ? '■ Stop <small>(Space)</small>' : '▶ Play <small>(Space)</small>';
+  document.getElementById('btnSongPlay').disabled = following; document.getElementById('songFrom').disabled = following; document.getElementById('songLoop').disabled = following;
+  if (c) document.getElementById('songInfo').textContent = following
+    ? `Following Live's transport: bar 1 of the arrangement is bar 1 of the song. Set Live to ${c.song.bpm} bpm (or slower) and loop any bars you want to drill.`
+    : `${Math.round(c.song.bpm * S.song.tempo / 100)} bpm (song ${c.song.bpm}) · ${c.bars.length} bars · ${c.hits.length} hits`;
+}
+function songFromBeat() { const v = document.getElementById('songFrom').value; return v === '' ? 0 : Number(v); }
+function songPlay() {
+  if (!SONG.comp || songFollowing()) return;
+  if (SONG.running) return songStop();
+  const c = SONG.comp, from = songFromBeat(), sec = c.sections.find(s => s.beat === from);
+  SONG.bpm = songBpm(); SONG.from = from; SONG.loop = S.song.loop && sec ? [sec.beat, sec.end] : null;
+  SONG.offsetBeat = from - c.bpb; SONG.startClock = clockNow() + 150; SONG.running = true; SONG.tally = newTally();
+  if (S.song.metronome) synth.ensure();
+  songSeek(from); setFeedback(`Count-in… ${Math.round(SONG.bpm)} bpm`, 'hint'); syncSongControls(); updateStats();
+  if (!SONG.raf) SONG.raf = requestAnimationFrame(songFrame);
+}
+function songStop() { if (!SONG.running) return; SONG.running = false; guideSilence(); songFinish('stopped'); syncSongControls(); }
+function songRestart() { if (songFollowing()) return; if (SONG.running) { SONG.running = false; songFinish('restarted'); } document.getElementById('songFrom').value = '0'; songPlay(); }
+/** Re-arm every hit from `pos` on; unresolved hits before it are skipped (not counted). */
+function songSeek(pos) {
+  const c = SONG.comp, w = songWindow(); let next = 0;
+  for (const h of c.hits) { if (h.beat < pos - w) { if (!h.res) h.res = { r:'skip' }; next = h.i + 1; } else { h.res = null; h.notes = []; } }
+  SONG.next = next; SONG.metroBeat = null; SONG.lastPos = null; SCORE.dirty = true;
+  guideSeek(pos);
+}
+function skipHits(fromPos, toPos) { const c = SONG.comp, w = songWindow(); while (SONG.next < c.hits.length && c.hits[SONG.next].beat + w < toPos) { const h = c.hits[SONG.next]; if (!h.res && h.beat > fromPos + w) { h.res = { r:'skip' }; paintHit(h); } else if (!h.res) resolveHit(h); SONG.next++; } }
+
+function songFrame() {
+  SONG.raf = 0; if (S.mode !== 'song' || !SONG.comp) return;
+  const c = SONG.comp, now = clockNow(); let pos = songBeatAt(now); const active = songActive();
+  if (songFollowing()) {
+    if (active && !SONG.hostWasPlaying) { SONG.tally = newTally(); songSeek(pos); updateStats(); }
+    if (!active && SONG.hostWasPlaying) songFinish('Live stopped');
+    SONG.hostWasPlaying = active;
+  } else if (SONG.running) {
+    if (SONG.loop && pos >= SONG.loop[1]) { SONG.startClock += (SONG.loop[1] - SONG.loop[0]) * 60000 / SONG.bpm; pos = songBeatAt(now); songSeek(SONG.loop[0]); }
+    if (pos > c.total + 1) { SONG.running = false; songFinish('finished'); syncSongControls(); drawScore(null); songPrompt(null); SONG.raf = requestAnimationFrame(songFrame); return; }
+  }
+  if (pos != null && active) {
+    if (SONG.lastPos != null) { if (pos < SONG.lastPos - 0.5) songSeek(pos); else if (pos > SONG.lastPos + 2) skipHits(SONG.lastPos, pos); }
+    const w = songWindow();
+    while (SONG.next < c.hits.length && c.hits[SONG.next].beat + w < pos) { const h = c.hits[SONG.next]; if (!h.res) resolveHit(h); SONG.next++; }
+    if (!songFollowing() && S.song.metronome) scheduleClicks(pos, now);
+    scheduleGuide(pos, now);
+    SONG.lastPos = pos;
+  } else SONG.lastPos = null;
+  if (performance.now() - GUIDE.lastUser > 1200) GUIDE.velEma *= 0.97;   // the guide comes back when you stop playing
+  const hit = c.hits[SONG.next] || null;
+  if (hit !== SONG.shownHit) { SONG.shownHit = hit; S.hintKeys = new Set(hit && S.song.keys ? [...(hit.lhMidi != null ? [hit.lhMidi] : []), ...hit.rhMidi] : []); paintPiano(); }
+  drawScore(active ? pos : (songFollowing() ? SONG.transport.ppq : null)); songPrompt(active ? pos : null);
+  SONG.raf = requestAnimationFrame(songFrame);
+}
+/** Note-on/off in song mode: assign the note to the nearest hit within the window and judge its pitch at once; timing is judged when the window closes. */
+function songNote(n, on, tClock) {
+  if (!on) { S.okKeys.delete(n); return; }
+  const c = SONG.comp; if (!c) return;
+  const pos = songBeatAt(tClock); if (pos == null || !songActive()) return;
+  const w = songWindow(), pc = n % 12, lh = n < S.settings.split, key = c.song.key;
+  let best = null;
+  for (let i = SONG.next; i < c.hits.length; i++) { const h = c.hits[i]; if (h.beat > pos + w) break; if (h.res) continue; const d = Math.abs(h.beat - pos); if (d <= w && (!best || d < Math.abs(best.beat - pos))) best = h; }
+  const chordNow = c.chords.find(x => pos >= x.beat && pos < x.beat + x.dur);
+  if (best) {
+    best.notes.push({ n, pc, lh, off:(pos - best.beat) * 60000 / songBpm() });
+    if (best.all.has(pc) || best.chord.pcs.includes(pc)) { S.okKeys.add(n); paintHitNote(best, pc, HIT_COLOURS.good); }
+    else { S.badHeld.add(n); setFeedback(`${pcNameIn(pc, key, best.chord.prefer)} isn't in ${best.chord.display}.`, 'bad'); }
+  } else if (chordNow && !chordNow.pcs.includes(pc) && pc !== chordNow.bassPc) { S.badHeld.add(n); setFeedback(`${pcNameIn(pc, key, chordNow.prefer)} isn't in ${chordNow.display}.`, 'bad'); }
+}
+function resolveHit(h) {
+  const notes = h.notes, correct = notes.filter(x => h.all.has(x.pc) || h.chord.pcs.includes(x.pc)), wrong = notes.length - correct.length;
+  const rhOk = h.rh.every(pc => notes.some(x => !x.lh && x.pc === pc)), lhOk = h.lh == null || notes.some(x => x.lh && x.pc === h.lh);
+  let r, off = null;
+  if (!correct.length) r = 'miss';
+  else { off = correct.reduce((a, x) => a + x.off, 0) / correct.length; const a = Math.abs(off); r = (wrong || !rhOk || !lhOk) ? 'partial' : a <= 50 ? 'perfect' : a <= 120 ? 'good' : off < 0 ? 'early' : 'late'; }
+  h.res = { r, off, rhOk, lhOk, wrong };
+  const t = SONG.tally; t.scored++; t.ratings[r] = (t.ratings[r] || 0) + 1; if (off != null) t.offs.push(off);
+  if (r !== 'miss' && r !== 'partial') t.full++; else t.misses.push(`${h.chord.display} (bar ${h.chord.bar})`);
+  const key = SONG.comp.song.key, name = h.chord.display, ms = off == null ? '' : `${Math.abs(Math.round(off))} ms ${off < 0 ? 'early' : 'late'}`;
+  if (r === 'perfect') setFeedback(`✓ ${name} · on the beat`, 'ok');
+  else if (r === 'good') setFeedback(`✓ ${name} · ${ms}`, 'ok');
+  else if (r === 'early' || r === 'late') setFeedback(`${name} · ${ms} — ${r === 'early' ? 'rushing' : 'dragging'}`, 'hint');
+  else if (r === 'miss') setFeedback(`Missed ${name} (bar ${h.chord.bar}).`, 'bad');
+  else {
+    const missing = h.rh.filter(pc => !notes.some(x => !x.lh && x.pc === pc)).map(pc => pcNameIn(pc, key, h.chord.prefer));
+    let why = wrong ? `${wrong} wrong note${wrong > 1 ? 's' : ''}` : !lhOk ? (notes.some(x => x.lh) ? `left hand should play ${pcNameIn(h.lh, key, h.chord.prefer)}` : 'left hand missing') : `right hand missing ${missing.join(' ')}`;
+    setFeedback(`${name} · ${why}.`, 'bad');
+  }
+  paintHit(h); updateStats();
+}
+function songRunSummary() {
+  const t = SONG.tally, c = SONG.comp; if (!t || !t.scored) return null;
+  const abs = t.offs.length ? t.offs.reduce((a, o) => a + Math.abs(o), 0) / t.offs.length : 0, bias = t.offs.length ? t.offs.reduce((a, o) => a + o, 0) / t.offs.length : 0;
+  const worst = Object.entries(t.misses.reduce((m, k) => (m[k] = (m[k] || 0) + 1, m), {})).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  return { song:c.song.title, version:c.v.name, level:S.level.id, tempo: songFollowing() ? Math.round(songBpm()) + ' bpm (Live)' : S.song.tempo + '%', scored:t.scored, full:t.full, acc:t.full / t.scored, abs, bias, ratings:t.ratings, worst };
+}
+function songFinish(reason) {
+  const run = songRunSummary(); SONG.metroBeat = null; guideSilence();
+  if (!run || run.scored < 4) { if (reason === 'finished') setFeedback('Run finished.', 'hint'); return; }
+  S.session.songRuns.push(run);
+  if (run.scored >= 8 && run.acc > (S.songBest[run.level] || 0)) { S.songBest[run.level] = run.acc; save('songs', S.songBest); }
+  const tend = Math.abs(run.bias) < 25 ? 'even timing' : run.bias < 0 ? 'tends early' : 'tends late';
+  setFeedback(`Run ${reason}: ${run.full} of ${run.scored} hits right (${Math.round(run.acc * 100)}%) · timing ±${Math.round(run.abs)} ms, ${tend}` + (run.worst.length ? ` · missed: ${run.worst.map(w => w[0]).join(', ')}` : ''), run.acc >= 0.8 ? 'ok' : 'hint');
+  refreshLevelOptions();
+}
+function songStatsHtml() {
+  const t = SONG.tally || newTally(), abs = t.offs.length ? t.offs.reduce((a, o) => a + Math.abs(o), 0) / t.offs.length : null, bias = t.offs.length ? t.offs.reduce((a, o) => a + o, 0) / t.offs.length : 0;
+  const bad = (t.ratings.miss || 0) + (t.ratings.partial || 0);
+  return `<div><b>${t.scored ? Math.round(t.full / t.scored * 100) + '%' : '–'}</b><span>hits right (${t.full}/${t.scored})</span></div><div><b>${abs == null ? '–' : '±' + Math.round(abs) + ' ms'}</b><span>timing${abs == null ? '' : Math.abs(bias) < 25 ? ' · even' : bias < 0 ? ' · early' : ' · late'}</span></div><div><b>${t.ratings.perfect || 0}</b><span>on the beat</span></div><div><b>${bad}</b><span>missed / wrong</span></div>`;
+}
+
+// metronome (WebAudio; inside Live use Live's own metronome and transport)
+const metro = {
+  click(perfT, accent) {
+    if (!synth.ensure()) return; const c = synth.ctx, at = Math.max(c.currentTime, c.currentTime + (perfT - performance.now()) / 1000);
+    const o = c.createOscillator(), g = c.createGain(); o.type = 'square'; o.frequency.value = accent ? 1600 : 1050;
+    g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(accent ? 0.6 : 0.35, at + 0.002); g.gain.exponentialRampToValueAtTime(0.0001, at + 0.045);
+    o.connect(g); g.connect(synth.master); o.start(at); o.stop(at + 0.06);
+  },
+};
+function scheduleClicks(pos, now) {
+  const msPerBeat = 60000 / SONG.bpm, bpb = SONG.comp.bpb;
+  if (SONG.metroBeat == null) SONG.metroBeat = Math.ceil(pos - 1e-6);
+  for (;;) { const b = SONG.metroBeat, t = SONG.startClock + (b - SONG.offsetBeat) * msPerBeat; if (t > now + 150) break; if (t >= now - 30) metro.click(clockToPerf(t), ((b % bpb) + bpb) % bpb === 0); SONG.metroBeat++; }
+}
+// guide: the plugin plays the part through its MIDI output (channel 2) so the instrument track sounds it;
+// in a browser the built-in synth stands in. Volume is a slider, and optionally ducks against how hard you play.
+const GUIDE = { idx:0, timers:[], sounding:new Set(), velEma:0, lastUser:0, lookahead:260 };
+function guideEvents() { const c = SONG.comp; if (!c.guideList) c.guideList = [...c.events.treble, ...c.events.bass].sort((a, b) => a.beat - b.beat); return c.guideList; }
+function guideTimeOf(beat) {
+  if (songFollowing()) { const tr = SONG.transport; return tr.playing && tr.bpm > 0 ? tr.t + (beat - tr.ppq) * 60000 / tr.bpm : null; }
+  return SONG.running ? SONG.startClock + (beat - SONG.offsetBeat) * 60000 / SONG.bpm : null;
+}
+function guideSeek(pos) { if (!SONG.comp) return; const list = guideEvents(); let i = 0; while (i < list.length && list[i].beat < pos - 1e-6) i++; GUIDE.idx = i; guideSilence(); }
+function guideSilence() {
+  GUIDE.timers.forEach(clearTimeout); GUIDE.timers = [];
+  if (HOST === 'plugin') { try { window.__JUCE__.backend.emitEvent('ui', { type:'guideOff' }); } catch (e) {} }
+  else for (const n of GUIDE.sounding) synth.off(n);
+  GUIDE.sounding.clear();
+}
+function guideDuck() { return S.song.guideDuck ? Math.min(1, Math.max(0, (GUIDE.velEma - 25) / 75)) : 0; }
+function scheduleGuide(pos, now) {
+  if (!S.song.guide) return;
+  const list = guideEvents(), msPerBeat = 60000 / songBpm(), batch = [], vel = Math.round(127 * (S.song.guideVol / 100) * (1 - guideDuck()));
+  while (GUIDE.idx < list.length) {
+    const e = list[GUIDE.idx], t = guideTimeOf(e.beat); if (t == null) return; if (t > now + GUIDE.lookahead) break;
+    GUIDE.idx++; if (t < now - 40 || vel < 1) continue;
+    const off = t + Math.max(60, e.dur * msPerBeat * 0.9);
+    for (const n of e.notes) { batch.push({ n, v:vel, ch:2, on:true, t }); batch.push({ n, v:0, ch:2, on:false, t:off }); }
+  }
+  if (!batch.length) return;
+  if (HOST === 'plugin') { try { window.__JUCE__.backend.emitEvent('ui', { type:'guide', notes:batch }); } catch (e) {} return; }
+  for (const ev of batch) { const delay = Math.max(0, clockToPerf(ev.t) - performance.now()); GUIDE.timers.push(setTimeout(() => { if (ev.on) { synth.on(ev.n, ev.v, true); GUIDE.sounding.add(ev.n); } else { synth.off(ev.n); GUIDE.sounding.delete(ev.n); } }, delay)); }
+  if (GUIDE.timers.length > 3000) GUIDE.timers = GUIDE.timers.slice(-1000);
+}
+function songPrompt(pos) {
+  const c = SONG.comp; let html;
+  const first = c.chords[0], bpm = Math.round(songBpm() * 10) / 10;
+  if (pos == null) html = `<div class="big">${c.song.title}</div><div class="sub">${c.song.artist} · ${c.song.keyName || keyLabel(c.song.key)} · ${c.song.bpm} bpm · ${c.bars.length} bars</div><div class="seq">${songFollowing() ? 'Press Play in Live to start' : 'Space = play / stop · Enter = restart from the top'}</div>`;
+  else if (pos < 0) html = `<div class="huge">${Math.floor(pos) + c.bpb + 1}</div><div class="sub">Count-in · ${bpm} bpm</div><div class="seq">First chord: <b>${first.display}</b></div>`;
+  else {
+    const ch = c.chords.find(x => pos >= x.beat && pos < x.beat + x.dur), next = c.chords.filter(x => x.beat > pos).slice(0, 3);
+    const bar = Math.floor(pos / c.bpb) + 1, beat = Math.floor(pos % c.bpb) + 1, sec = c.sections.find(s => pos >= s.beat && pos < s.end);
+    html = `<div class="huge">${ch ? ch.display : '—'}</div><div class="sub">Bar ${bar} · beat ${beat}${sec ? ' · ' + sec.name : ''} · ${bpm} bpm</div>` + (next.length ? `<div class="seq">Next: ${next.map(x => x.display).join(' · ')}</div>` : (ch ? '<div class="seq">Last chord</div>' : '<div class="seq">End</div>'));
+  }
+  if (html !== SONG.promptHtml) { SONG.promptHtml = html; setPrompt(html); }
+}
+function bindSongControls() {
+  document.getElementById('btnSongPlay').onclick = songPlay;
+  document.getElementById('btnSongRestart').onclick = songRestart;
+  const setBpm = bpm => {
+    if (!SONG.comp) return; bpm = Math.min(220, Math.max(30, Math.round(bpm)));
+    if (songFollowing()) { S.song.follow = false; SONG.hostWasPlaying = false; setFeedback("The plugin keeps time now and Live's transport is ignored. Tick “Follow Live's transport” to hand the clock back to Live.", 'hint'); }
+    S.song.tempo = bpm / SONG.comp.song.bpm * 100; save('song', S.song);
+    if (SONG.running) { const now = clockNow(), pos = songBeatAt(now); SONG.bpm = songBpm(); SONG.offsetBeat = pos; SONG.startClock = now; SONG.metroBeat = null; }
+    syncSongControls();
+  };
+  document.getElementById('songBpm').onchange = e => setBpm(Number(e.target.value));
+  document.getElementById('bpmDown').onclick = () => setBpm(Number(document.getElementById('songBpm').value) - 5);
+  document.getElementById('bpmUp').onclick = () => setBpm(Number(document.getElementById('songBpm').value) + 5);
+  document.getElementById('songGuide').onchange = e => { S.song.guide = e.target.checked; save('song', S.song); if (S.song.guide) guideSeek(SONG.lastPos != null ? SONG.lastPos : songFromBeat()); else guideSilence(); };
+  document.getElementById('songGuideVol').oninput = e => { S.song.guideVol = Number(e.target.value); save('song', S.song); document.getElementById('songGuideVolText').textContent = S.song.guideVol + '%'; };
+  document.getElementById('songGuideDuck').onchange = e => { S.song.guideDuck = e.target.checked; save('song', S.song); };
+  document.getElementById('songMetro').onchange = e => { S.song.metronome = e.target.checked; save('song', S.song); SONG.metroBeat = null; if (S.song.metronome) synth.ensure(); };
+  document.getElementById('songView').onchange = e => { S.song.view = e.target.value; save('song', S.song); scoreReset(); drawScore(SONG.lastPos); };
+  document.getElementById('songBars').onchange = e => { S.song.barsPerLine = Number(e.target.value); save('song', S.song); scoreReset(); drawScore(SONG.lastPos); };
+  document.getElementById('songFinger').onchange = e => { S.song.fingering = e.target.checked; save('song', S.song); scoreReset(); drawScore(SONG.lastPos); };
+  document.getElementById('songKeys').onchange = e => { S.song.keys = e.target.checked; save('song', S.song); SONG.shownHit = null; };
+  document.getElementById('songLoop').onchange = e => { S.song.loop = e.target.checked; save('song', S.song); if (SONG.running) { const sec = SONG.comp.sections.find(s => s.beat === SONG.from); SONG.loop = S.song.loop && sec ? [sec.beat, sec.end] : null; } };
+  document.getElementById('songFollow').onchange = e => { S.song.follow = e.target.checked; save('song', S.song); if (SONG.running) songStop(); SONG.hostWasPlaying = false; songSeek(0); SONG.tally = newTally(); syncSongControls(); updateStats(); };
+  document.getElementById('songFrom').onchange = () => { if (!SONG.running) { songSeek(songFromBeat()); SONG.shownHit = null; drawScore(null); } };
+  if (window.ResizeObserver) new ResizeObserver(() => { if (S.mode === 'song' && SONG.comp) { const g = scoreGeometry(); if (!SCORE.layout || g.bars !== SCORE.layout.geom.bars || g.systems !== SCORE.layout.geom.systems) { scoreReset(); drawScore(SONG.lastPos); } } }).observe(document.getElementById('staffWrap'));
+}
+
+// ---------------------------------------------------------------- score rendering (Songs)
+/* Engraves the compiled song on a grand staff, system by system, using SMuFL glyphs from Bravura:
+   clefs, key and time signatures, noteheads by value, stems, flags, beams, dots, ties, rests,
+   accidentals (per bar, with courtesy accidentals), chord symbols, rehearsal marks, bar numbers,
+   fingering, a tempo mark and a dynamic. Two systems are shown; the page follows the cursor so the
+   current line and the next are always visible. Only the cursor moves per frame; the page is
+   re-rendered when the visible systems change. */
+const SM = { gClef:'', fClef:'', sharp:'', flat:'', natural:'', dot:'', mp:'', metQuarter:'',
+  head:{ 4:'', 2:'', 1:'' }, slash:{ 4:'', 2:'', 1:'' },
+  rest:{ 4:'', 2:'', 1:'', 0.5:'', 0.25:'' },
+  flagUp:{ 0.5:'', 0.25:'' }, flagDown:{ 0.5:'', 0.25:'' },
+  timeSig:['','','','','','','','','',''] };
+const HEAD_W = { 4:16.9, 2:11.8, 1:11.8 }, SLASH_W = 21, STEM = 35, MID_STEP = { treble:34, bass:22 }, STAFF_LO = { treble:30, bass:18 };
+const SCORE = { TOP:62, SYS_H:250, HEADER:110, BAR_W:270, layout:null, page:-1, dirty:false };
+const NOTE_VALUES = [4, 3, 2, 1.5, 1, 0.75, 0.5, 0.25];
+const gapFor = d => 26 * Math.pow(1.5, Math.log2(2 * d));
+const ACC_GLYPH = { '-1':SM.flat, '0':SM.natural, '1':SM.sharp };
+
+function valueOf(dur) {
+  const v = NOTE_VALUES.find(x => Math.abs(x - dur) < 1e-6) || 0.25;
+  return v === 4 ? { base:4, dots:0, flag:null } : v === 3 ? { base:2, dots:1, flag:null } : v === 2 ? { base:2, dots:0, flag:null } : v === 1.5 ? { base:1, dots:1, flag:null }
+       : v === 1 ? { base:1, dots:0, flag:null } : v === 0.75 ? { base:1, dots:1, flag:0.5 } : v === 0.5 ? { base:1, dots:0, flag:0.5 } : { base:1, dots:0, flag:0.25 };
+}
+/** Split a duration into notatable values (ties between them), not crossing the middle of the bar unless it starts the bar. */
+function splitDuration(start, dur, bpb) {
+  const out = []; let b = start, rem = dur; const half = bpb / 2;
+  while (rem > 1e-6) {
+    let v = NOTE_VALUES.find(x => x <= rem + 1e-6) || 0.25;
+    if (b > 1e-6 && b < half - 1e-6 && b + v > half + 1e-6) v = NOTE_VALUES.find(x => x <= half - b + 1e-6) || 0.25;
+    if ((v === 3 || v === 1.5) && Math.abs(b - Math.round(b)) > 1e-6) v = v === 3 ? 2 : 1;
+    if (v === 0.75 && Math.abs(b * 2 - Math.round(b * 2)) > 1e-6) v = 0.5;
+    out.push({ beat:b, dur:v }); b += v; rem -= v;
+  }
+  return out;
+}
+function stemDir(heads, staff) { const mid = MID_STEP[staff]; let far = heads[0]; for (const h of heads) if (Math.abs(h.step - mid) > Math.abs(far.step - mid)) far = h; return far.step > mid ? 'down' : 'up'; }
+function beamGroups(pieces, bpb) {
+  let group = null, gid = 0;
+  const flush = () => { if (group && group.length > 1) { gid++; const down = group.filter(p => p.stem === 'down').length; const dir = down * 2 >= group.length ? 'down' : 'up'; group.forEach(p => { p.beam = gid; p.stem = dir; }); } group = null; };
+  for (const p of pieces) { const ok = !p.rest && p.flag != null, half = Math.floor((p.beat + 1e-6) / (bpb / 2)); if (ok && group && group.half === half) group.push(p); else { flush(); if (ok) { group = [p]; group.half = half; } } }
+  flush();
+}
+function scoreGeometry() {
+  const wrap = document.getElementById('staffWrap'), cw = wrap.clientWidth || 900, ch = wrap.clientHeight || 500;
+  const systems = ch >= 420 ? 2 : 1, viewH = SCORE.TOP + systems * SCORE.SYS_H;
+  let bars = S.song.barsPerLine || 0;
+  if (!bars) { bars = 1; for (const k of [4, 3, 2]) { if ((SCORE.HEADER + k * SCORE.BAR_W) / viewH <= (cw / ch) * 1.08) { bars = k; break; } } }
+  return { systems, bars, viewW: SCORE.HEADER + bars * SCORE.BAR_W, viewH };
+}
+function scoreReset() { SCORE.layout = null; SCORE.page = -1; }
+function layoutSong(comp, geom) {
+  const bpb = comp.bpb, key = comp.song.key, sig = keySig(key), nSig = Math.abs(KEYS[key] || 0), slashes = S.song.view === 'slashes';
+  const seenFinger = { treble:new Set(), bass:new Set() };
+  let prevState = { treble:{}, bass:{} }; const bars = [];
+  for (const bar of comp.bars) {
+    const b0 = bar.beat, b1 = b0 + bpb, staves = {}, state = { treble:{}, bass:{} };
+    for (const staff of ['treble', 'bass']) {
+      const evs = comp.events[staff].filter(e => e.beat >= b0 - 1e-6 && e.beat < b1 - 1e-6).map(e => ({ ...e, beat:e.beat - b0, dur:Math.min(e.dur, b1 - e.beat) }));
+      const items = []; let t = 0;
+      for (const e of evs) { if (e.beat > t + 1e-6) items.push({ rest:true, beat:t, dur:e.beat - t }); items.push(e); t = e.beat + e.dur; }
+      if (t < bpb - 1e-6) items.push({ rest:true, beat:t, dur:bpb - t });
+      const pieces = [];
+      for (const it of items) {
+        if (it.rest && it.beat < 1e-6 && Math.abs(it.dur - bpb) < 1e-6) { pieces.push({ rest:true, beat:0, dur:4, base:4, dots:0, flag:null, whole:true }); continue; }
+        const parts = splitDuration(it.beat, it.dur, bpb);
+        parts.forEach((p, i) => pieces.push({ ...it, ...valueOf(p.dur), beat:p.beat, dur:p.dur, tieFrom: !it.rest && i < parts.length - 1, tieTo: !it.rest && i > 0, first: i === 0 }));
+      }
+      for (const p of pieces) {
+        if (p.rest) continue;
+        p.heads = p.notes.map(m => {
+          const sp = spell(m, key, p.prefer), k = sp.letter + sp.oct, inKey = sig[sp.letter] || 0, cur = state[staff][k];
+          let acc = null;
+          if (cur != null ? cur !== sp.acc : (sp.acc !== inKey || (prevState[staff][k] != null && prevState[staff][k] !== inKey))) acc = sp.acc;   // second clause: courtesy accidental
+          state[staff][k] = sp.acc;
+          return { midi:m, sp, acc, step:sp.step };
+        }).sort((a, b) => a.step - b.step);
+        p.stem = p.base === 4 ? null : slashes ? 'up' : stemDir(p.heads, staff);
+        if (p.first && p.finger && S.song.fingering) { const fk = p.notes.join(','); if (!seenFinger[staff].has(fk)) { seenFinger[staff].add(fk); p.showFinger = true; } }
+      }
+      beamGroups(pieces, bpb);
+      staves[staff] = pieces;
+    }
+    prevState = state;
+    const onsets = [...new Set([...staves.treble, ...staves.bass].map(p => Math.round(p.beat * 1000)))].sort((a, b) => a - b).map(k => k / 1000);
+    const cols = onsets.map((bt, i) => ({ beat:bt, next: i + 1 < onsets.length ? onsets[i + 1] : bpb }));
+    let x = 16;
+    for (const c of cols) {
+      const accN = slashes ? 0 : Math.max(...['treble', 'bass'].map(st => { const p = staves[st].find(q => Math.abs(q.beat - c.beat) < 1e-6); return p && p.heads ? p.heads.filter(h => h.acc != null).length : 0; }));
+      c.accW = accN ? 12 + 8 * (accN - 1) : 0; x += c.accW; c.x = x; x += gapFor(c.next - c.beat);
+    }
+    const chords = comp.chords.filter(ch => ch.beat >= b0 - 1e-6 && ch.beat < b1 - 1e-6).map(ch => ({ ...ch, rel:ch.beat - b0 }));
+    bars.push({ bar, staves, cols, chords, natural: Math.max(120, x + 6, chords.length * 46 + 16) });
+  }
+  const systems = []; for (let i = 0; i < bars.length; i += geom.bars) systems.push({ bars:bars.slice(i, i + geom.bars), index:systems.length });
+  const headerW = 18 + 34 + nSig * 9 + 12; let prevScale = 1.6;
+  for (const sys of systems) {
+    sys.headerW = headerW + (sys.index === 0 ? 26 : 0);
+    const avail = geom.viewW - sys.headerW - 8, total = sys.bars.reduce((a, b) => a + b.natural, 0);
+    const scale = sys.bars.length < geom.bars ? Math.min(avail / total, prevScale) : avail / total; prevScale = scale;
+    let x = sys.headerW;
+    for (const bl of sys.bars) { bl.x0 = x; bl.width = bl.natural * scale; bl.system = sys.index; for (const c of bl.cols) c.absX = x + c.x * scale; x += bl.width; }
+    sys.x1 = x;
+  }
+  return { bars, systems, geom };
+}
+const svgText = (t, x, y, size, attrs = '') => `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-size="${size}" ${attrs}>${t}</text>`;
+const glyph = (g, x, y, attrs = '') => `<text class="bravura" x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-size="40" ${attrs}>${g}</text>`;
+function yOnStaff(step, staff, top) { return top + 40 - (step - STAFF_LO[staff]) * SP / 2; }
+function renderPage(first) {
+  const L = SCORE.layout, geom = L.geom, c = SONG.comp, key = c.song.key, nSig = Math.abs(KEYS[key] || 0), kind = (KEYS[key] || 0) > 0 ? 'sharp' : 'flat';
+  const view = S.song.view, slashes = view === 'slashes', showChords = view !== 'notes', esc = t => t.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const ink = '#e8eaf0', line = '#c9cdd8';
+  let s = '';
+  if (first === 0) {
+    s += svgText(esc(c.song.title), geom.viewW / 2, 24, 19, `text-anchor="middle" font-weight="700" fill="${ink}"`);
+    s += svgText(esc(c.song.artist.replace(/\s*\(.*\)$/, '')), geom.viewW - 8, 44, 12, `text-anchor="end" fill="var(--muted)"`);
+    s += svgText(esc(c.song.tempoText || 'Moderately'), 14, 46, 13, `font-style="italic" fill="${ink}"`) + glyph(SM.metQuarter, 14 + (c.song.tempoText || 'Moderately').length * 6.6 + 4, 46, `fill="${ink}" font-size="26"`) + svgText(`= ${c.song.bpm}`, 14 + (c.song.tempoText || 'Moderately').length * 6.6 + 24, 46, 13, `fill="${ink}"`);
+  }
+  for (let k = 0; k < geom.systems; k++) {
+    const sys = L.systems[first + k]; if (!sys) break;
+    const y0 = SCORE.TOP + k * SCORE.SYS_H, tops = { treble: y0 + 58, bass: y0 + 158 }, xEnd = sys.x1;
+    for (const staff of ['treble', 'bass']) for (let i = 0; i < 5; i++) s += `<line x1="14" x2="${xEnd.toFixed(1)}" y1="${tops[staff] + i * SP}" y2="${tops[staff] + i * SP}" stroke="${line}" stroke-width="1.1"/>`;
+    s += `<line x1="14" x2="14" y1="${tops.treble}" y2="${tops.bass + 40}" stroke="${line}" stroke-width="1.5"/>`;
+    s += `<path d="M 10 ${tops.treble} C 0 ${tops.treble + 50}, 0 ${tops.treble + 50}, 6 ${tops.treble + 70} C 0 ${tops.bass - 30}, 0 ${tops.bass - 30}, 10 ${tops.bass + 40}" fill="none" stroke="${line}" stroke-width="2"/>`;
+    s += glyph(SM.gClef, 22, yOnStaff(32, 'treble', tops.treble), `fill="${ink}"`) + glyph(SM.fClef, 22, yOnStaff(24, 'bass', tops.bass), `fill="${ink}"`);
+    for (let i = 0; i < nSig; i++) { const x = 58 + i * 9; s += glyph(ACC_GLYPH[kind === 'sharp' ? 1 : -1], x, yOnStaff(KS_POS.treble[kind][i], 'treble', tops.treble), `fill="${ink}"`) + glyph(ACC_GLYPH[kind === 'sharp' ? 1 : -1], x, yOnStaff(KS_POS.bass[kind][i], 'bass', tops.bass), `fill="${ink}"`); }
+    if (sys.index === 0) { const ts = c.song.timeSig || [c.bpb, 4], x = 58 + nSig * 9 + 6; for (const staff of ['treble', 'bass']) s += glyph(SM.timeSig[ts[0]], x, tops[staff] + 10, `fill="${ink}"`) + glyph(SM.timeSig[ts[1]], x, tops[staff] + 30, `fill="${ink}"`); }
+    else s += svgText(sys.bars[0].bar.n, sys.headerW + 2, tops.treble - 6, 9, `fill="var(--muted)"`);
+    for (let bi = 0; bi < sys.bars.length; bi++) {
+      const bl = sys.bars[bi], isLast = bl.bar.n === c.bars.length, x1 = bl.x0 + bl.width;
+      if (bl.bar.section && bl.bar.n > 1) for (const dx of [-4, 0]) s += `<line x1="${(bl.x0 + dx).toFixed(1)}" x2="${(bl.x0 + dx).toFixed(1)}" y1="${tops.treble}" y2="${tops.bass + 40}" stroke="${line}" stroke-width="1.2"/>`;
+      if (bl.bar.section) { const w = bl.bar.section.length * 6.6 + 10; s += `<rect x="${bl.x0.toFixed(1)}" y="${y0 + 2}" width="${w.toFixed(1)}" height="15" rx="2" fill="none" stroke="${ink}" stroke-width="1"/>` + svgText(esc(bl.bar.section), bl.x0 + 5, y0 + 13.5, 11, `font-weight="700" fill="${ink}"`); }
+      if (isLast) s += `<line x1="${x1.toFixed(1)}" x2="${x1.toFixed(1)}" y1="${tops.treble}" y2="${tops.bass + 40}" stroke="${line}" stroke-width="1.2"/><rect x="${(x1 + 2.5).toFixed(1)}" y="${tops.treble}" width="4" height="${tops.bass + 40 - tops.treble}" fill="${line}"/>`;
+      else s += `<line x1="${x1.toFixed(1)}" x2="${x1.toFixed(1)}" y1="${tops.treble}" y2="${tops.bass + 40}" stroke="${line}" stroke-width="1.2"/>`;
+      if (showChords) for (const ch of bl.chords) { const col = bl.cols.find(cc => Math.abs(cc.beat - ch.rel) < 1e-6); s += svgText(esc(ch.display), (col ? col.absX - 6 : bl.x0 + 12), tops.treble - 30, 15, `font-weight="700" fill="${ink}" data-chord="${ch.beat}"`); }
+      if (first === 0 && sys.index === 0 && bi === 0) s += glyph(SM.mp, bl.cols[0].absX - 24, tops.treble + 92, `fill="${ink}"`);
+      for (const staff of ['treble', 'bass']) s += renderStaffBar(bl, staff, tops[staff], slashes, key);
+    }
+  }
+  s += `<g id="liveNotes"></g><rect id="cursorBand" x="0" y="0" width="0" height="0" rx="4" fill="rgba(76,142,218,.16)" style="display:none"/><line id="cursorLine" x1="0" x2="0" y1="0" y2="0" stroke="var(--accent)" stroke-width="1.6" opacity=".9" style="display:none"/>`;
+  const svg = document.getElementById('staff'); svg.setAttribute('viewBox', `0 0 ${geom.viewW} ${geom.viewH}`); svg.setAttribute('preserveAspectRatio', 'xMidYMin meet'); svg.innerHTML = s;
+  SCORE.page = first; SCORE.dirty = false;
+}
+function renderStaffBar(bl, staff, top, slashes, key) {
+  const ink = '#e8eaf0', line = '#c9cdd8', pieces = bl.staves[staff], cn = S.settings.colourNotes; let s = '', beamed = {};
+  for (let i = 0; i < pieces.length; i++) {
+    const p = pieces[i], col = bl.cols.find(cc => Math.abs(cc.beat - p.beat) < 1e-6), x = col.absX;
+    if (p.rest) {
+      const rest = p.flag ? SM.rest[p.flag] : SM.rest[p.base]; const ry = p.base === 4 ? top + 10 : top + 20;
+      s += glyph(rest, x - 5, ry, `fill="${ink}"`); if (p.dots) s += glyph(SM.dot, x + 9, top + 15, `fill="${ink}"`);
+      continue;
+    }
+    const hit = p.hit, hitAttr = hit ? ` data-hit="${hit.i}"` : '', res = hit && hit.res && hit.res.r;
+    if (slashes) {   // rhythm slashes on the middle line, stems up
+      const y = top + 20, hw = SLASH_W, fill = res ? HIT_COLOURS[res] : ink;
+      s += glyph(SM.slash[p.base], x - hw / 2, y, `fill="${fill}"${hitAttr} data-slash="1"`);
+      if (p.base !== 4) { const sx = x + hw / 2 - 1, endY = p.beam ? (beamed[p.beam] = beamed[p.beam] || { xs:[], dir:'up', y: y - STEM - 4 }).y : y - STEM; s += `<line x1="${sx.toFixed(1)}" x2="${sx.toFixed(1)}" y1="${(y - 3).toFixed(1)}" y2="${endY.toFixed(1)}" stroke="${fill}" stroke-width="1.6"/>`; if (p.beam) beamed[p.beam].xs.push(sx); else if (p.flag) s += glyph(SM.flagUp[p.flag], sx, endY, `fill="${fill}"`); }
+      if (p.dots) s += glyph(SM.dot, x + hw / 2 + 3, y - 5, `fill="${ink}"`);
+      continue;
+    }
+    const hw = HEAD_W[p.base], up = p.stem === 'up', heads = p.heads;
+    // seconds: offset the upper note of each adjacent pair to the other side of the stem
+    let prevStep = -99, prevOff = false; for (const h of heads) { h.off = (h.step - prevStep === 1) && !prevOff; prevStep = h.step; prevOff = h.off; }
+    const ys = heads.map(h => yOnStaff(h.step, staff, top)), yTop = Math.min(...ys), yBot = Math.max(...ys);
+    // ledger lines
+    const lo = STAFF_LO[staff], hi = lo + 8;
+    for (const h of heads) { if (h.step < lo) for (let m = lo - 2; m >= h.step; m -= 2) s += `<line x1="${(x - hw / 2 - 4).toFixed(1)}" x2="${(x + hw / 2 + 4).toFixed(1)}" y1="${yOnStaff(m, staff, top)}" y2="${yOnStaff(m, staff, top)}" stroke="${line}" stroke-width="1.3"/>`; if (h.step > hi) for (let m = hi + 2; m <= h.step; m += 2) s += `<line x1="${(x - hw / 2 - 4).toFixed(1)}" x2="${(x + hw / 2 + 4).toFixed(1)}" y1="${yOnStaff(m, staff, top)}" y2="${yOnStaff(m, staff, top)}" stroke="${line}" stroke-width="1.3"/>`; }
+    // accidentals, stacked from the top, packed into columns
+    const accs = heads.filter(h => h.acc != null).sort((a, b) => b.step - a.step), cols = [];
+    for (const a of accs) { let col = 0; for (const cc of cols) if (Math.abs(cc.step - a.step) < 6 && cc.col === col) col++; cols.push({ step:a.step, col }); a.accCol = Math.min(col, 2); }
+    for (const h of accs) s += glyph(ACC_GLYPH[h.acc], x - hw / 2 - 12 - h.accCol * 8, yOnStaff(h.step, staff, top), `fill="${ink}"`);
+    // stem
+    let stemX = null, endY = null;
+    if (p.base !== 4) {
+      stemX = up ? x + hw / 2 - 0.6 : x - hw / 2 + 0.6;
+      if (p.beam) { const g = beamed[p.beam] = beamed[p.beam] || { xs:[], dir:p.stem, y: up ? Infinity : -Infinity }; g.y = up ? Math.min(g.y, yTop - STEM) : Math.max(g.y, yBot + STEM); g.xs.push(stemX); g.pending = g.pending || []; g.pending.push({ x:stemX, yTop, yBot }); }
+      else { endY = up ? yTop - STEM : yBot + STEM; const fill = res ? HIT_COLOURS[res] : ink; s += `<line x1="${stemX.toFixed(1)}" x2="${stemX.toFixed(1)}" y1="${(up ? yBot - 1.7 : yTop + 1.7).toFixed(1)}" y2="${endY.toFixed(1)}" stroke="${fill}" stroke-width="1.6"${hitAttr} data-stem="1"/>`; if (p.flag) s += glyph((up ? SM.flagUp : SM.flagDown)[p.flag], stemX, endY, `fill="${fill}"${hitAttr}`); }
+    }
+    // noteheads, dots, letters, ties
+    for (let hi2 = 0; hi2 < heads.length; hi2++) {
+      const h = heads[hi2], y = ys[hi2], hx = x + (h.off ? (up ? hw : -hw) : 0) - hw / 2;
+      const fill = res ? HIT_COLOURS[res] : cn ? LETTER_COLOURS[h.sp.letter] : ink;
+      s += glyph(SM.head[p.base], hx, y, `fill="${fill}"${hitAttr} data-pc="${h.midi % 12}" data-midi="${h.midi}"`);
+      if (p.dots) s += glyph(SM.dot, hx + hw + 3, h.step % 2 === 0 ? y - 5 : y, `fill="${ink}"`);
+      if (S.settings.staffLetters) s += svgText(h.sp.pcName, hx + hw + (p.dots ? 12 : 3), y + 3.5, 9, `fill="${fill}" font-weight="600" font-family="system-ui, sans-serif"`);
+      if (p.tieFrom && pieces[i + 1] && !pieces[i + 1].rest) { const nx = bl.cols.find(cc => Math.abs(cc.beat - pieces[i + 1].beat) < 1e-6).absX - hw / 2 - 2, dirUp = heads.length > 1 ? hi2 >= heads.length / 2 : (p.stem ? p.stem === 'down' : h.step > MID_STEP[staff]), sgn = dirUp ? -1 : 1, x0 = hx + hw + 2; s += `<path d="M ${x0.toFixed(1)} ${(y + sgn * 4).toFixed(1)} C ${(x0 + (nx - x0) * 0.3).toFixed(1)} ${(y + sgn * 11).toFixed(1)}, ${(x0 + (nx - x0) * 0.7).toFixed(1)} ${(y + sgn * 11).toFixed(1)}, ${nx.toFixed(1)} ${(y + sgn * 4).toFixed(1)}" fill="none" stroke="${ink}" stroke-width="1.4"/>`; }
+    }
+    // fingering: RH above, LH below, stacked in pitch order
+    if (p.showFinger) {
+      const f = p.finger, above = staff === 'treble';
+      const base = above ? Math.min(yTop, up && endY != null ? endY : yTop, p.beam ? (up ? yTop - STEM : yTop) : yTop) - 8 : Math.max(yBot, !up && endY != null ? endY : yBot, p.beam ? (up ? yBot : yBot + STEM) : yBot) + 13;
+      for (let k = 0; k < f.length; k++) { const idx = above ? k : f.length - 1 - k; s += svgText(f[idx], x, above ? base - k * 9 : base + k * 9, 9, `text-anchor="middle" fill="${ink}" font-family="system-ui, sans-serif"`); }
+    }
+  }
+  // beams: one flat beam per group at the extreme stem end, stems extended to meet it
+  for (const id in beamed) {
+    const g = beamed[id]; if (!g.xs.length) continue; const up = g.dir === 'up', y = g.y, x0 = Math.min(...g.xs) - 0.8, x1 = Math.max(...g.xs) + 0.8;
+    if (g.pending) for (const st of g.pending) s += `<line x1="${st.x.toFixed(1)}" x2="${st.x.toFixed(1)}" y1="${(up ? st.yBot - 1.7 : st.yTop + 1.7).toFixed(1)}" y2="${y.toFixed(1)}" stroke="${ink}" stroke-width="1.6"/>`;
+    s += `<rect x="${x0.toFixed(1)}" y="${(up ? y : y - 5).toFixed(1)}" width="${(x1 - x0).toFixed(1)}" height="5" fill="${ink}"/>`;
+  }
+  return s;
+}
+/** Per-frame: make sure the page holding the cursor is rendered, then move the cursor. */
+function drawScore(pos) {
+  const c = SONG.comp; if (!c || S.mode !== 'song') return;
+  if (!SCORE.layout) { SCORE.layout = layoutSong(c, scoreGeometry()); SCORE.page = -1; }
+  const L = SCORE.layout, bpb = c.bpb;
+  const startBar = Math.min(L.bars.length - 1, Math.max(0, Math.floor((pos == null ? songFromBeat() : Math.max(0, pos)) / bpb)));
+  const sys = L.bars[startBar].system;
+  const want = Math.min(sys, Math.max(0, L.systems.length - L.geom.systems));
+  if (want !== SCORE.page || SCORE.dirty) renderPage(want);
+  const band = document.getElementById('cursorBand'), cl = document.getElementById('cursorLine'); if (!band) return;
+  if (pos == null || pos < 0) { band.style.display = 'none'; cl.style.display = 'none'; return; }
+  const bl = L.bars[startBar], k = bl.system - SCORE.page, y0 = SCORE.TOP + k * SCORE.SYS_H, rel = pos - bl.bar.beat;
+  let ci = bl.cols.length - 1; for (let i = 0; i < bl.cols.length; i++) if (bl.cols[i].beat <= rel + 1e-6) ci = i;
+  const col = bl.cols[ci], nextX = ci + 1 < bl.cols.length ? bl.cols[ci + 1].absX : bl.x0 + bl.width + 8;
+  const frac = Math.min(1, Math.max(0, (rel - col.beat) / (col.next - col.beat)));
+  band.setAttribute('x', (col.absX - 9).toFixed(1)); band.setAttribute('width', (nextX - col.absX).toFixed(1)); band.setAttribute('y', y0 + 44); band.setAttribute('height', 168); band.style.display = '';
+  const lx = col.absX - 9 + (nextX - col.absX) * frac; cl.setAttribute('x1', lx.toFixed(1)); cl.setAttribute('x2', lx.toFixed(1)); cl.setAttribute('y1', y0 + 44); cl.setAttribute('y2', y0 + 212); cl.style.display = '';
+}
+function paintHit(h) { const col = h.res ? HIT_COLOURS[h.res.r] : null; document.querySelectorAll(`#staff [data-hit="${h.i}"]`).forEach(el => { if (col) el.setAttribute('fill', col); else if (el.hasAttribute('data-pc')) el.setAttribute('fill', S.settings.colourNotes ? LETTER_COLOURS[spell(+el.getAttribute('data-midi'), SONG.comp.song.key).letter] : '#e8eaf0'); else el.setAttribute('fill', '#e8eaf0'); if (el.hasAttribute('data-stem')) el.setAttribute('stroke', col || '#e8eaf0'); }); }
+function paintHitNote(h, pc, colour) { document.querySelectorAll(`#staff [data-hit="${h.i}"][data-pc="${pc}"]`).forEach(el => el.setAttribute('fill', colour)); }
+/** Wrong notes being held are drawn in red at their own pitch in the cursor column. */
+function drawLiveNotes() {
+  const g = document.getElementById('liveNotes'), L = SCORE.layout; if (!g || !L) return;
+  const band = document.getElementById('cursorBand'); if (band.style.display === 'none' || !S.badHeld.size) { g.innerHTML = ''; return; }
+  const x = Number(band.getAttribute('x')) + 9, y0 = Number(band.getAttribute('y')) - 44, key = SONG.comp.song.key, hit = SONG.comp.hits[SONG.next], prefer = hit ? hit.chord.prefer : null;
+  let s = '';
+  for (const m of S.badHeld) { const staff = m >= 60 ? 'treble' : 'bass', top = staff === 'treble' ? y0 + 58 : y0 + 158, sp = spell(m, key, prefer), y = yOnStaff(sp.step, staff, top); if (sp.show) s += glyph(ACC_GLYPH[sp.acc], x + 6, y, 'fill="var(--bad)"'); s += glyph(SM.head[1], x + 18, y, 'fill="var(--bad)"') + svgText(sp.name, x + 32, y + 3.5, 9, 'fill="var(--bad)" font-weight="600" font-family="system-ui, sans-serif"'); }
+  g.innerHTML = s;
 }
 
 // ---------------------------------------------------------------- stats, levels, sessions
@@ -674,9 +1284,11 @@ function updateStats() {
   const st = sessionStats(), all = S.session.results.length;
   let html = `<div><b>${S.session.streak}</b><span>streak (best ${S.session.bestStreak})</span></div><div><b>${st.n ? Math.round(st.acc * 100) + '%' : '–'}</b><span>first-try accuracy</span></div><div><b>${st.n ? (st.rt / 1000).toFixed(1) + ' s' : '–'}</b><span>median response</span></div><div><b>${all}</b><span>items this session</span></div>`;
   if (S.mode === 'hands' && st.n) html += `<div><b>${Math.round(st.spread)} ms</b><span>median hand spread</span></div>`;
+  if (S.mode === 'song') html = songStatsHtml();
   document.getElementById('stats').innerHTML = html;
 }
 function masteryOf(mode, level) {
+  if (mode === 'song') return S.songBest[level.id] || 0;
   const items = itemsFor(mode, level), thr = (THRESH[mode] || {}).rt || 4000; if (!items.length) return 0;
   const m = items.filter(i => { const s = S.stats[i.id]; return s && s.seen >= 3 && (s.wrong + 0.5 * s.hint) / s.seen < 0.2 && median(s.rts) <= thr; }).length;
   return m / items.length;
@@ -688,11 +1300,15 @@ function checkLevelUp() {
   const idx = LEVELS[S.mode].findIndex(l => l.id === S.level.id);
   document.getElementById('levelUp').classList.toggle('show', ok && idx < LEVELS[S.mode].length - 1);
 }
+function levelOptions(mode) { return LEVELS[mode].map(l => `<option value="${l.id}">${l.name}${mode === 'mirror' ? '' : mode === 'song' ? ' · best ' + Math.round(masteryOf(mode, l) * 100) + '%' : ' · ' + Math.round(masteryOf(mode, l) * 100) + '%'}</option>`).join(''); }
+function refreshLevelOptions() { const sel = document.getElementById('levelSelect'); sel.innerHTML = levelOptions(S.mode); sel.value = S.level.id; document.getElementById('masteryBar').style.width = Math.round(masteryOf(S.mode, S.level) * 100) + '%'; }
 function setMode(mode) {
+  if (S.mode === 'song' && mode !== 'song') { if (SONG.running) songStop(); guideSilence(); const svg = document.getElementById('staff'); svg.setAttribute('viewBox', '0 0 600 300'); svg.setAttribute('preserveAspectRatio', 'xMidYMid meet'); }
   S.mode = mode; document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
-  const sel = document.getElementById('levelSelect'); sel.innerHTML = LEVELS[mode].map(l => `<option value="${l.id}">${l.name}${mode !== 'mirror' ? ' · ' + Math.round(masteryOf(mode, l) * 100) + '%' : ''}</option>`).join('');
-  document.getElementById('levelTitle').textContent = { read:'Reading level', chord:'Chord level', hands:'Two-hand level', mirror:'Mirror' }[mode];
-  document.querySelector('.actions').style.visibility = mode === 'mirror' ? 'hidden' : 'visible';
+  document.getElementById('levelSelect').innerHTML = levelOptions(mode);
+  document.getElementById('levelTitle').textContent = { read:'Reading level', chord:'Chord level', hands:'Two-hand level', song:'Song', mirror:'Mirror' }[mode];
+  document.querySelector('.actions').style.visibility = (mode === 'mirror' || mode === 'song') ? 'hidden' : 'visible';
+  document.getElementById('songCard').style.display = mode === 'song' ? '' : 'none';
   setLevel(S.lastLevels[mode] || LEVELS[mode][0].id);
 }
 function setLevel(id) {
@@ -702,26 +1318,29 @@ function setLevel(id) {
   document.getElementById('levelSelect').value = level.id;
   const m = S.mode === 'mirror' ? 0 : masteryOf(S.mode, level);
   document.getElementById('masteryBar').style.width = Math.round(m * 100) + '%';
-  document.getElementById('masteryText').textContent = S.mode === 'mirror' ? 'No scoring here — explore.' : `${S.items.length} items · ${Math.round(m * 100)}% mastered` + (THRESH[S.mode] ? ` · level up at ${Math.round(THRESH[S.mode].acc * 100)}% over ${THRESH[S.mode].n} in a row` : '');
+  document.getElementById('masteryText').textContent = S.mode === 'mirror' ? 'No scoring here — explore.' : S.mode === 'song' ? (m ? `Best run: ${Math.round(m * 100)}% of hits right` : 'No run recorded yet') : `${S.items.length} items · ${Math.round(m * 100)}% mastered` + (THRESH[S.mode] ? ` · level up at ${Math.round(THRESH[S.mode].acc * 100)}% over ${THRESH[S.mode].n} in a row` : '');
   document.getElementById('levelUp').classList.remove('show');
-  nextItem();
+  if (S.mode === 'song') { clearTimeout(S.hintTimer); clearTimeout(S.advanceTimer); S.item = null; songLoad(level); } else nextItem();
 }
 function endSession() {
   const ss = S.session, st = sessionStats(), mins = Math.max(1, Math.round((Date.now() - ss.start) / 60000));
   const misses = {}; ss.results.forEach(r => { if (!r.guided && !r.firstTry) misses[r.name] = (misses[r.name] || 0) + 1; });
   const weakest = Object.entries(misses).sort((a, b) => b[1] - a[1]).slice(0, 5);
   const levelNames = [...new Set(ss.results.map(r => r.level))].map(id => { for (const m in LEVELS) { const l = LEVELS[m].find(x => x.id === id); if (l) return l.name; } return id; });
-  document.getElementById('summaryBody').innerHTML = `<table><tr><td>Items</td><td>${ss.results.length} (${st.n} scored)</td></tr><tr><td>First-try accuracy</td><td>${st.n ? Math.round(st.acc * 100) + '%' : '–'}</td></tr><tr><td>Median response</td><td>${st.n ? (st.rt / 1000).toFixed(1) + ' s' : '–'}</td></tr><tr><td>Best streak</td><td>${ss.bestStreak}</td></tr><tr><td>Weakest</td><td>${weakest.map(w => `${w[0]} ×${w[1]}`).join(', ') || '–'}</td></tr></table>`;
+  if (S.mode === 'song' && SONG.running) songStop();
+  const runs = ss.songRuns || [];
+  const runLine = r => `${r.song} · ${r.version} @ ${r.tempo} · ${Math.round(r.acc * 100)}% of ${r.scored} hits right · timing ±${Math.round(r.abs)} ms${Math.abs(r.bias) < 25 ? '' : r.bias < 0 ? ' (early)' : ' (late)'}` + (r.worst.length ? ` · missed ${r.worst.map(w => w[0]).join(', ')}` : '');
+  document.getElementById('summaryBody').innerHTML = `<table>${runs.map(r => `<tr><td>Play-along</td><td>${runLine(r)}</td></tr>`).join('')}<tr><td>Items</td><td>${ss.results.length} (${st.n} scored)</td></tr><tr><td>First-try accuracy</td><td>${st.n ? Math.round(st.acc * 100) + '%' : '–'}</td></tr><tr><td>Median response</td><td>${st.n ? (st.rt / 1000).toFixed(1) + ' s' : '–'}</td></tr><tr><td>Best streak</td><td>${ss.bestStreak}</td></tr><tr><td>Weakest</td><td>${weakest.map(w => `${w[0]} ×${w[1]}`).join(', ') || '–'}</td></tr></table>`;
   const date = new Date().toISOString().slice(0, 10);
-  document.getElementById('summaryMd').value = `### ${date} — Trainer session (${levelNames.join('; ') || 'no items'})\n- ${mins} min · ${ss.results.length} items · first-try accuracy ${st.n ? Math.round(st.acc * 100) + '%' : '–'} · median response ${st.n ? (st.rt / 1000).toFixed(1) + ' s' : '–'} · best streak ${ss.bestStreak}\n- Weakest: ${weakest.map(w => `${w[0]} (${w[1]} miss${w[1] > 1 ? 'es' : ''})`).join(', ') || 'none'}\n`;
-  if (ss.results.length) { S.sessions.push({ date, n:ss.results.length, acc:st.acc, rt:st.rt, levels:levelNames }); save('sessions', S.sessions); }
+  document.getElementById('summaryMd').value = `### ${date} — Trainer session (${levelNames.join('; ') || 'no items'})\n- ${mins} min · ${ss.results.length} items · first-try accuracy ${st.n ? Math.round(st.acc * 100) + '%' : '–'} · median response ${st.n ? (st.rt / 1000).toFixed(1) + ' s' : '–'} · best streak ${ss.bestStreak}\n- Weakest: ${weakest.map(w => `${w[0]} (${w[1]} miss${w[1] > 1 ? 'es' : ''})`).join(', ') || 'none'}\n` + runs.map(r => `- Play-along: ${runLine(r)}\n`).join('');
+  if (ss.results.length || runs.length) { S.sessions.push({ date, n:ss.results.length, acc:st.acc, rt:st.rt, levels:levelNames }); save('sessions', S.sessions); }
   document.getElementById('summaryDlg').showModal();
 }
 
 // ---------------------------------------------------------------- settings UI
 const SETTING_FIELDS = [['sKeys','keyboardSize',Number],['sOct','octaveNaming',String],['sHintWrong','hintAfterWrong',Number],['sHintSec','hintAfterSec',Number],['sGuided','guided',Number],['sDelay','nextDelay',Number],['sPreview','preview',Number],['sLetters','staffLetters',Boolean],['sColours','colourNotes',Boolean],['sLearn','learnMode',Boolean],['sAnyOct','anyOctave',Boolean],['sRoot','requireRoot',Boolean],['sSplit','split',Number],['sCh10','ignoreCh10',Boolean],['sSound','sound',Boolean]];
 function syncToggles() { document.getElementById('btnLetters').classList.toggle('on', !!S.settings.staffLetters); document.getElementById('btnColours').classList.toggle('on', !!S.settings.colourNotes); }
-function redrawAll() { syncToggles(); if (S.mode === 'mirror') renderMirror(); else if (S.item) { MODES[S.mode].render(S.item); if (S.hintShown) MODES[S.mode].hint(S.item); } refresh(); }
+function redrawAll() { syncToggles(); if (S.mode === 'mirror') renderMirror(); else if (S.mode === 'song') { scoreReset(); drawScore(SONG.lastPos); } else if (S.item) { MODES[S.mode].render(S.item); if (S.hintShown) MODES[S.mode].hint(S.item); } refresh(); }
 function openSettings() {
   for (const [id, key, type] of SETTING_FIELDS) { const el = document.getElementById(id); if (type === Boolean) el.checked = !!S.settings[key]; else el.value = S.settings[key]; }
   document.getElementById('rowSound').style.display = HOST === 'plugin' ? 'none' : '';
@@ -736,13 +1355,47 @@ function applySettings() {
   else { if (before.preview !== S.settings.preview) fillQueue(); redrawAll(); }
 }
 
+// ---------------------------------------------------------------- song charts
+const SONGS = [
+  { id:'arutw', title:'Always Remember Us This Way', artist:'Lady Gaga (A Star Is Born, 2018)', key:'C', keyName:'A minor (no sharps or flats)', bpm:65, beats:4, tempoText:'Slowly',
+    // Chord chart only (the vocal melody is not transcribed). Bars from the published chord charts and the
+    // Songsterr transcription; the last three bars (the ritardando ending) are an approximation.
+    sections:[
+      { name:'Intro',        bars:['Am','Am'] },
+      { name:'Verse 1',      bars:['Am','F','C','G','Am','F','C','G'] },
+      { name:'Pre-chorus',   bars:['F','C','Am','G'] },
+      { name:'Chorus',       bars:['F:1 G:1 Am:2','F:1 G:1 C:2','F G','C'] },
+      { name:'Verse 2',      like:'Verse 1' },
+      { name:'Pre-chorus 2', like:'Pre-chorus' },
+      { name:'Chorus 2',     bars:['F:1 G:1 Am:2','F:1 G:1 C:2','F G','Bb'] },
+      { name:'Bridge',       bars:['F','C','Bb','F','G'] },
+      { name:'Pre-chorus 3', like:'Pre-chorus' },
+      { name:'Final chorus', bars:['F:1 G:1 Am:2','F:1 G:1 C:2','F G','Am'] },
+      { name:'Outro',        bars:['F:1 G:1 Am:2','F:1 G:1 C:2','F G','F Bb','F C','C'] },
+    ],
+    versions:{
+      easy:     { name:'Easy',        pattern:'block',   simplify:2, voicing:'root', tempo:85,  view:'full',  keys:true,
+                  desc:'Easy: whole-note chords — LH root, RH root-position triad, one hit per chord change. 85% tempo, chord symbols shown, keys highlighted. Watch the chorus: F, G and the target chord each get one beat.' },
+      medium:   { name:'Medium',      pattern:'pulse',   simplify:1, voicing:'root', tempo:100, view:'full',  keys:false,
+                  desc:'Medium: RH quarter-note chords, LH half-note roots on 1 and 3. Full tempo (65 bpm). Read the staff — the keys are no longer highlighted.' },
+      hard:     { name:'Hard',        pattern:'ballad',  simplify:0, voicing:'lead', tempo:100, view:'notes', keys:false,
+                  desc:'Hard: LH quarter notes root–5th–octave–5th; RH dotted-quarter / eighth chords with voice-led inversions (any inversion is accepted). Notes only, no chord symbols.' },
+      recorded: { name:'As recorded', pattern:'eighths', simplify:0, voicing:'root', tempo:100, view:'notes', keys:false,
+                  desc:'As recorded: the piano part on the record — RH continuous eighth-note broken chords (low note, then the upper two), LH whole-note roots. Beamed eighths at full tempo.' },
+    },
+  },
+];
+
 // ---------------------------------------------------------------- boot
 function boot() {
   Object.assign(S.settings, load('settings', {})); S.stats = load('stats', {}); S.sessions = load('sessions', []); S.lastLevels = load('levels', {});
+  Object.assign(S.song, load('song', {})); S.songBest = load('songs', {});
+  LEVELS.song = SONGS.flatMap(sg => Object.entries(sg.versions).map(([vid, v]) => ({ id:`s:${sg.id}:${vid}`, name:`${sg.title} — ${v.name}`, song:sg, vid, v })));
+  bindSongControls();
   const firstRun = !localStorage.getItem('mlt.settings');
   newSession();
   pianoRange = [...(KB_RANGE[S.settings.keyboardSize] || KB_RANGE[49])]; buildPiano();
-  document.getElementById('kbdHint').textContent = HOST === 'plugin' ? 'Space = show me · Enter = skip · Esc = end session' : 'Computer keyboard: A–K = C4–C5 (W E T Y U = black keys), Z/X = octave · Space = show me · Enter = skip · Esc = end session';
+  document.getElementById('kbdHint').textContent = HOST === 'plugin' ? 'Space = show me (Songs: play/stop) · Enter = skip (Songs: restart) · Esc = end session' : 'Computer keyboard: A–K = C4–C5 (W E T Y U = black keys), Z/X = octave · Space = show me (Songs: play/stop) · Enter = skip (Songs: restart) · Esc = end session';
   document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => setMode(b.dataset.mode));
   document.getElementById('levelSelect').onchange = e => setLevel(e.target.value);
   document.getElementById('btnLevelUp').onclick = () => { const ls = LEVELS[S.mode], i = ls.findIndex(l => l.id === S.level.id); if (i < ls.length - 1) { setLevel(ls[i + 1].id); setMode(S.mode); } };

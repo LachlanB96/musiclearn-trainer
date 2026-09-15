@@ -1,10 +1,11 @@
 # MusicLearn Trainer
 
 A VST3 plugin for Ableton Live (or any VST3 host on Windows) that turns your MIDI keyboard into a
-music-reading and chord trainer. It sits on a MIDI track, watches what you play, shows it on a real
-grand staff, and tells you — visually, never with sound — whether you played what was asked. MIDI
-passes straight through, so recording, instruments, Spectrum and everything else in Live keep
-working.
+music-reading, chord and play-along trainer. It sits on a MIDI track, watches what you play, shows
+it on a real grand staff, and tells you — visually, never with sound — whether you played what was
+asked. In Songs mode it follows Live's transport, so you can play a chord chart in time against a
+drum loop or the original track. MIDI passes straight through, so recording, instruments, Spectrum
+and everything else in Live keep working.
 
 ![MusicLearn Trainer running inside Ableton Live 12](screenshot.png)
 
@@ -39,6 +40,35 @@ already use.
 Controllers with drum pads (Novation Launchkey, for example) usually send the pads on MIDI
 channel 10; the trainer ignores that channel by default (Settings → *Ignore MIDI channel 10*).
 
+### Playing along inside Live (Songs mode)
+
+With **Follow Live's transport** ticked (the default inside Live), the song chart is locked to the
+arrangement: **bar 1 of the arrangement is bar 1 of the song**, and Live's tempo is the song's
+tempo. So:
+
+1. Set Live's tempo to the song's bpm (shown in the Songs card), or slower while learning.
+2. Press Play in Live; the trainer counts bars with it. Use Live's metronome, a drum loop, or the
+   original recording on an audio track (warped to the tempo, lined up so its first bar is bar 1).
+3. Drag Live's loop brace over the bars you want to drill; the trainer scores each pass.
+
+Without the transport (the Standalone build, a browser, or with the box unticked) the trainer runs
+its own clock: pick a section, a tempo in bpm (−5 / +5 or type it) and optionally *loop it*, press
+**Play** (Space), and a one-bar count-in leads into the song. Changing the bpm while following
+Live hands the clock to the plugin (a plugin cannot set Live's tempo); tick *Follow Live's
+transport* again to give it back. The built-in metronome is a WebAudio click; inside Live prefer
+Live's own metronome.
+
+### Hearing the part: the guide
+
+**Guide plays the part** makes the plugin play the arrangement itself, through its MIDI output on
+channel 2, sample-accurately on the beat. For that to be audible, route your instrument track
+from the plugin rather than from the keyboard: on the piano track set **MIDI From** to the
+*Trainer* track and choose *MusicLearn Trainer* in the second chooser. Your own notes still pass
+through the plugin, so the piano plays both you and the guide. The slider sets the guide's
+volume; **fades as I play** ducks it against how hard you are playing (recent note velocities):
+play with conviction and the guide drops out, hesitate or stop and it comes back within a couple
+of seconds. In a browser the built-in synth stands in for the instrument.
+
 Note names follow standard notation (middle C = **C4**). Live's piano roll calls the same key
 **C3**; switch to Ableton naming in Settings if that is less confusing.
 
@@ -52,6 +82,25 @@ Four tabs, each with levels that unlock as you master them:
   any inversion. Levels go triads → all roots → dim/aug → roman numerals → 7ths.
 - **Two hands** — left hand plays the root below middle C, right hand plays the chord above it.
   Also measures how close together the two hands land (in milliseconds).
+- **Songs** — play a whole song from a real page of piano music, in time. The song is engraved
+  on a grand staff like a printed piano/vocal score: title, tempo mark, dynamic, brace, clefs, key
+  and time signatures, bar lines with double bars at section changes, rehearsal marks, bar
+  numbers, chord symbols, note values with stems, flags, beams, dots, ties and rests, accidentals
+  (with courtesy accidentals) and fingering on the first occurrence of each shape. Four bars per
+  line, two lines on screen, and the page follows the cursor so the line you are on and the next
+  one are always visible; narrow windows drop to two or three bars per line (or pin it under
+  *Bars per line*). A cursor moves through the bar; noteheads turn green, amber or red as each hit
+  is scored, and a wrong note you are holding is drawn in red at its own pitch. Every hit is scored
+  for pitch (any inversion, LH below the split point) and timing against the beat: on the beat
+  (±50 ms), close (±120 ms), early/late, partial (a wrong or missing note) or missed.
+  *Staff* switches between notes with chord symbols (the book default), notes only, and chord
+  symbols over rhythm slashes (a chord chart, so you must know the voicings). Each song comes in
+  four arrangements: **Easy** (whole-note chords, slower), **Medium** (RH quarter-note chords,
+  LH half-note roots), **Hard** (LH root–5th–octave–5th, RH dotted-quarter/eighth chords with
+  voice-led inversions, sevenths and slash chords as charted) and **As recorded** (the record's
+  piano part: RH continuous eighth-note broken chords, LH whole-note roots). The songs are chord
+  charts, not transcriptions: the accompaniment is yours to play, the melody is not shown.
+  Space = play/stop, Enter = restart from the top.
 - **Mirror** — no test. Whatever you hold is drawn on the staff and named (chord, inversion,
   interval). Use it to explore.
 
@@ -85,6 +134,11 @@ like a line of music, in Chords / Two hands they appear as a "Next:" line.
   first-try with a quick median response. Nothing is forced; pick any level any time.
 - **Two-hand coordination** is trained with the simplest possible left-hand job (one note) and a
   measurable target (hands landing within ~30 ms).
+- **Songs are the goal, drills are the means.** Songs mode is reading practice with a pulse: a
+  page that looks like the book, a cursor that does not wait, and the answer (highlighted keys,
+  chord symbols) removable one setting at a time. Timing is scored per hit and summarised per run
+  (accuracy, mean timing error, whether you rush or drag, the chords you missed most), and the
+  best run per arrangement is kept.
 - **No sound cues.** Success is a soft green flash and a tick; errors a red flash. The
   instrument you route to is the only thing you hear.
 
@@ -138,20 +192,32 @@ W E T Y U = black keys, Z/X = octave), and has a built-in practice sound. Rebuil
 
 Levels and item pools are plain data (`LEVELS`, `itemsFor`) in the HTML; add new drills there.
 
+Songs are data too (`SONGS`, just above `boot()`): a chord chart as sections of bars (`'F:1 G:1 Am:2'`
+= three chords in one bar with explicit beat counts, `'F G'` = two chords sharing the bar, `%` =
+repeat the previous bar, `like:` replays a named section) plus `versions`, each naming a rhythmic
+pattern (`block`, `pulse`, `ballad`, `eighths` in `SONG_PATTERNS`: per hand, offset / duration /
+what to play), a `simplify` level (0 = as charted, 1 = triads and sus with the charted bass, 2 =
+plain triads), a voicing (`root` or `lead`), a default tempo percentage and the default staff view.
+`compileSong` turns that into per-hand note events and scoring hits; `layoutSong` splits the
+events into notatable values (ties across the half-bar, rests in the gaps, beams by half-bar,
+stems by the note farthest from the middle line, accidentals per bar) and spaces the bars
+proportionally; `renderPage` draws two systems with Bravura's SMuFL glyphs. Nothing else needs to
+change to add a song.
+
 ## Layout
 
 ```
 CMakeLists.txt        JUCE plugin definition (VST3 + Standalone)
 build.cmd             one-shot MSVC + CMake + Ninja build
 install.cmd/.ps1      elevated copy into the system VST3 folder
-Source/               thin C++ shell: MIDI FIFO + WebView2 host
+Source/               thin C++ shell: MIDI FIFO, host transport snapshot + WebView2 host
 ui/index.html         all UI and learning logic
 ui/Bravura.woff2      music notation font (SIL OFL)
 ```
 
 ## Roadmap
 
-- Rhythm: notated rhythms with a metronome, timing feedback against the beat.
+- More songs; a rhythm level that reads notated rhythms rather than chord symbols.
 - Ear training: identify intervals/chords played by the host.
 - Progress chart across sessions.
 - macOS build (WebKit back end).
