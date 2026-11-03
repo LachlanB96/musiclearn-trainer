@@ -13,8 +13,16 @@
 
 namespace
 {
+    /** Where the Trainer keeps its WebView2 profile and ui-dir.txt: %LOCALAPPDATA%\MusicLearnTrainer, or the absolute
+        folder in MUSICLEARN_TRAINER_DATA when that's set (the check's smoke test gives the Standalone a fresh one). */
     juce::File dataFolder()
     {
+        const auto fromEnv = juce::SystemStats::getEnvironmentVariable ("MUSICLEARN_TRAINER_DATA", {});
+        jassert (fromEnv.isEmpty() || juce::File::isAbsolutePath (fromEnv));
+
+        if (juce::File::isAbsolutePath (fromEnv))
+            return juce::File (fromEnv);
+
        #if JUCE_WINDOWS
         const auto base = juce::File::getSpecialLocation (juce::File::windowsLocalAppData);
        #else

@@ -1,0 +1,9 @@
+{
+  "summary": "The MusicLearn Trainer, a VST3 instrument and Standalone (JUCE 8 and WebView2) that drills reading, chords and two-hand playing and plays songs along with Ableton Live's transport; public on GitHub as musiclearn-trainer. Its whole UI is ui/index.html, which this PC serves from disk (live UI). Part of Musica, which teaches with it.",
+  "publishes": {},
+  "uses": {
+    "@Blueprint:typescript": "the base tsconfig and the shared check: check.ts's ts part runs megaproject/check.cts",
+    "@LBTerm:start-unfocused": "test/start-standalone.ps1 opens the Standalone with Start-Unfocused for the smoke test: through WMI, without focus, inside the check's warden job",
+    "warden-run": "check.ts queues build.cmd and the smoke test with it"
+  }
+}

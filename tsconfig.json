@@ -1,0 +1,8 @@
+{
+  // tsc over the Trainer's own TypeScript: check.ts and test/. The check is bun check.ts.
+  // The UI (ui/index.html) is a page of its own and isn't type-checked.
+  "extends": "megaproject/tsconfig.base.json",
+  "compilerOptions": { "lib": ["es2024", "dom", "dom.iterable"], "types": ["bun"], "module": "preserve" },
+  "include": ["*.ts", "test/**/*.ts"],
+  "exclude": ["node_modules", ".claude", "dist", "ui"]
+}
