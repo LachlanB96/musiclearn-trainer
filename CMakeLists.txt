@@ -13,6 +13,18 @@ if(NOT EXISTS "${JUCE_DIR}/CMakeLists.txt")
     message(FATAL_ERROR "JUCE not found at ${JUCE_DIR}. Clone it: git clone --depth 1 --branch 8.0.8 https://github.com/juce-framework/JUCE.git")
 endif()
 
+# The WebView2 SDK version this builds against. JUCE's FindWebView2 caches the first package folder it finds,
+# so a build folder would keep using an older SDK after a newer one is unpacked; pinning the folder here stops that.
+set(WEBVIEW2_SDK_VERSION 1.0.4314.35)
+if(WIN32)
+    set(webview2_sdk_dir "${JUCE_WEBVIEW2_PACKAGE_LOCATION}/Microsoft.Web.WebView2.${WEBVIEW2_SDK_VERSION}")
+    if(NOT EXISTS "${webview2_sdk_dir}/build/native/include/WebView2.h")
+        message(FATAL_ERROR "WebView2 SDK ${WEBVIEW2_SDK_VERSION} not found at ${webview2_sdk_dir}. Download "
+                            "https://www.nuget.org/packages/Microsoft.Web.WebView2/${WEBVIEW2_SDK_VERSION} and unzip the .nupkg into that folder.")
+    endif()
+    set(WebView2_root_dir "${webview2_sdk_dir}" CACHE PATH "WebView2 SDK package folder (from WEBVIEW2_SDK_VERSION)" FORCE)
+endif()
+
 add_subdirectory(${JUCE_DIR} JUCE EXCLUDE_FROM_ALL)
 
 juce_add_plugin(MusicLearnTrainer

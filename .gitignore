@@ -4,6 +4,9 @@ out/
 cmake-build-*/
 *.log
 
+# Worktrees for branches (the main checkout stays on main)
+.claude/worktrees/
+
 # IDE / editor
 .vs/
 .vscode/
