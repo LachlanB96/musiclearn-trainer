@@ -53,7 +53,7 @@ tempo. So:
 
 Without the transport (the Standalone build, a browser, or with the box unticked) the trainer runs
 its own clock: pick a section, a tempo in bpm (−5 / +5 or type it) and optionally *loop it*, press
-**Play** (Space), and a one-bar count-in leads into the song. Changing the bpm while following
+**Play** (Space), and a one-bar count-in (two bars in 2/4) leads into the song. Changing the bpm while following
 Live hands the clock to the plugin (a plugin cannot set Live's tempo); tick *Follow Live's
 transport* again to give it back. The built-in metronome is a WebAudio click; inside Live prefer
 Live's own metronome.
@@ -85,8 +85,10 @@ Four tabs, each with levels that unlock as you master them:
 - **Songs** — play a whole song from a real page of piano music, in time. The song is engraved
   on a grand staff like a printed piano/vocal score: title, tempo mark, dynamic, brace, clefs, key
   and time signatures, bar lines with double bars at section changes, rehearsal marks, bar
-  numbers, chord symbols, note values with stems, flags, beams, dots, ties and rests, accidentals
-  (with courtesy accidentals) and fingering on the first occurrence of each shape. Four bars per
+  numbers, chord symbols, note values down to thirty-seconds with stems, flags, beams (double and
+  triple for sixteenths and thirty-seconds), dots, ties and rests, accidentals (with courtesy
+  accidentals), key changes, trills, rolled chords and fingering on the first occurrence of each
+  shape. Four bars per
   line, two lines on screen, and the page follows the cursor so the line you are on and the next
   one are always visible; narrow windows drop to two or three bars per line (or pin it under
   *Bars per line*). A cursor moves through the bar; noteheads turn green, amber or red as each hit
@@ -94,13 +96,22 @@ Four tabs, each with levels that unlock as you master them:
   for pitch (any inversion, LH below the split point) and timing against the beat: on the beat
   (±50 ms), close (±120 ms), early/late, partial (a wrong or missing note) or missed.
   *Staff* switches between notes with chord symbols (the book default), notes only, and chord
-  symbols over rhythm slashes (a chord chart, so you must know the voicings). Each song comes in
-  four arrangements: **Easy** (whole-note chords, slower), **Medium** (RH quarter-note chords,
-  LH half-note roots), **Hard** (LH root–5th–octave–5th, RH dotted-quarter/eighth chords with
-  voice-led inversions, sevenths and slash chords as charted) and **As recorded** (the record's
-  piano part: RH continuous eighth-note broken chords, LH whole-note roots). The songs are chord
-  charts, not transcriptions: the accompaniment is yours to play, the melody is not shown.
-  Space = play/stop, Enter = restart from the top.
+  symbols over rhythm slashes (a chord chart, so you must know the voicings). Space = play/stop,
+  Enter = restart from the top. The songs:
+  - *Always Remember Us This Way* is a chord chart, not a transcription: the accompaniment is
+    yours to play, the melody is not shown. Four arrangements: **Easy** (whole-note chords,
+    slower), **Medium** (RH quarter-note chords, LH half-note roots), **Hard** (LH
+    root–5th–octave–5th, RH dotted-quarter/eighth chords with voice-led inversions, sevenths and
+    slash chords as charted) and **As recorded** (the record's piano part: RH continuous
+    eighth-note broken chords, LH whole-note roots).
+  - Mozart's *Rondo alla Turca* (the Turkish March, K. 331) is public domain, so it is written out
+    note for note, and a hit wants exactly the written notes (either hand, any octave). Three
+    arrangements: **Easy** (the A-minor theme, bars 1–25: the tune alone in the RH, one bass note
+    per bar in the LH, 55% tempo), **Medium** (the theme and the A-major march, bars 1–33: RH as
+    written, LH one note or chord per beat, 70%) and **Hard** (the whole movement as written,
+    repeats skipped, rolled LH chords in the march, full tempo). Easy and Medium leave the
+    ornaments out; right-hand grace notes are left out everywhere. Bar 1 is the pickup, so
+    Trainer bar *n* is bar *n* − 1 in a printed score.
 - **Mirror** — no test. Whatever you hold is drawn on the staff and named (chord, inversion,
   interval). Use it to explore.
 
@@ -166,6 +177,8 @@ package under `%USERPROFILE%\Documents\git\_deps\webview2`. Either put them ther
 ```
 build.cmd          # configures with CMake + Ninja, builds VST3 and Standalone
 install.cmd        # copies the VST3 into C:\Program Files\Common Files\VST3\ (asks for admin)
+update.cmd         # build.cmd then install.cmd (one UAC prompt)
+live-ui on|off     # load ui/ from this folder instead of the built-in copy (see below)
 python package.py  # zips the built VST3 + INSTALL.txt into dist/ for a GitHub release
 ```
 
@@ -189,7 +202,16 @@ python -m http.server 8765
 ```
 
 In a browser the page uses Web MIDI (close Live first) or the computer keyboard (A–K = C4–C5,
-W E T Y U = black keys, Z/X = octave), and has a built-in practice sound. Rebuild to embed changes.
+W E T Y U = black keys, Z/X = octave), and has a built-in practice sound.
+
+To work on it inside Live, run `live-ui on` once. The plugin then serves `ui/` straight from this
+folder instead of the copy built into it (the footer says *Live UI*) and reloads the page about a
+second after `index.html` is saved, so edits, new songs included, appear in Live with no build,
+install or re-added device. Progress is kept: it is the same page origin and WebView2 profile.
+It takes effect the next time the plugin window opens, and it is a per-machine setting
+(`%LOCALAPPDATA%\MusicLearnTrainer\ui-dir.txt`), so release builds always use their built-in UI.
+`live-ui off` switches back; run `update.cmd` before a release so the built-in copy is current.
+Changes to `Source/` still need `update.cmd` and a re-added device.
 
 Levels and item pools are plain data (`LEVELS`, `itemsFor`) in the HTML; add new drills there.
 
@@ -204,6 +226,16 @@ events into notatable values (ties across the half-bar, rests in the gaps, beams
 stems by the note farthest from the middle line, accidentals per bar) and spaces the bars
 proportionally; `renderPage` draws two systems with Bravura's SMuFL glyphs. Nothing else needs to
 change to add a song.
+
+A public-domain piece can be written out instead: next to its chart (`bars`), each section gets
+`rh` and `lh`, one string of notes per bar (`'8C5 r 16D5 C5 B4 C5'`: a duration — 4 = quarter, 8,
+16, 32, a trailing `.` dots it — carries on until changed; notes are joined with `+` into chords,
+`~` ties a note into the next chord, `{G5+A5}` in front are grace notes, a trailing `tr` is a trill).
+`key:` on a section changes the key signature from there, and `pickup:` says how many beats at the
+end of the section lead into the next one. Its versions name `parts` instead of a pattern (RH
+`score` or `melody`; LH `score`, `beat` or `bar`), optionally stop `through:` a section, and set
+`ornaments:false` or `rolled:true`; the comment above `parseWrittenNote` has the details. A bar
+that doesn't add up to the time signature is an error on load, which catches most typing slips.
 
 ## Layout
 
@@ -220,6 +252,7 @@ ui/Bravura.woff2      music notation font (SIL OFL)
 ## Roadmap
 
 - More songs; a rhythm level that reads notated rhythms rather than chord symbols.
+- Engrave grace notes (the Turkish March leaves its right-hand ones out).
 - Ear training: identify intervals/chords played by the host.
 - Progress chart across sessions.
 - macOS build (WebKit back end).

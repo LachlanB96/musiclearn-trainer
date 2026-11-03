@@ -13,14 +13,33 @@
 
 namespace
 {
-    juce::File webViewDataFolder()
+    juce::File dataFolder()
     {
        #if JUCE_WINDOWS
         const auto base = juce::File::getSpecialLocation (juce::File::windowsLocalAppData);
        #else
         const auto base = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory);
        #endif
-        return base.getChildFile ("MusicLearnTrainer").getChildFile ("WebView2");
+        return base.getChildFile ("MusicLearnTrainer");
+    }
+
+    juce::File webViewDataFolder() { return dataFolder().getChildFile ("WebView2"); }
+
+    /** The folder named in ui-dir.txt if it holds an index.html, else an empty File (use the embedded UI). */
+    juce::File liveUiFolder()
+    {
+        const auto config = dataFolder().getChildFile ("ui-dir.txt");
+
+        if (! config.existsAsFile())
+            return {};
+
+        const auto path = config.loadFileAsString().trim().unquoted();
+
+        if (! juce::File::isAbsolutePath (path))
+            return {};
+
+        const juce::File dir (path);
+        return dir.getChildFile ("index.html").existsAsFile() ? dir : juce::File();
     }
 
     juce::String mimeFor (const juce::String& extension)
@@ -52,14 +71,16 @@ juce::WebBrowserComponent::Options TrainerEditor::makeOptions (TrainerEditor& se
                                      .withBuiltInErrorPageDisabled())
         .withNativeIntegrationEnabled()
         .withKeepPageLoadedWhenBrowserIsHidden()
-        .withResourceProvider ([] (const auto& url) { return getResource (url); })
+        .withResourceProvider ([dir = self.uiDir] (const auto& url) { return getResource (url, dir); })
         .withInitialisationData ("host", "plugin")
+        .withInitialisationData ("ui", self.uiDir == juce::File() ? "embedded" : "live")
         .withEventListener ("ui", [&self] (const juce::var& payload) { self.handleUiEvent (payload); });
 }
 
 TrainerEditor::TrainerEditor (TrainerProcessor& p)
     : AudioProcessorEditor (p),
       processor (p),
+      uiDir (liveUiFolder()),
       web (makeOptions (*this))
 {
     addAndMakeVisible (web);
@@ -68,6 +89,9 @@ TrainerEditor::TrainerEditor (TrainerProcessor& p)
     setResizeLimits (720, 480, 4096, 4096);
     setSize (juce::jlimit (720, 4096, processor.editorWidth.load()),
              juce::jlimit (480, 4096, processor.editorHeight.load()));
+
+    if (uiDir != juce::File())
+        uiSeen = uiDir.getChildFile ("index.html").getLastModificationTime();
 
     web.goToURL (juce::WebBrowserComponent::getResourceProviderRoot());
     startTimerHz (60);
@@ -92,6 +116,8 @@ void TrainerEditor::resized()
 
 void TrainerEditor::timerCallback()
 {
+    checkLiveUi();
+
     // Transport first, then notes: the page maps note times onto the host's beat grid using the latest snapshot.
     {
         const auto tr = processor.getTransport();
@@ -123,6 +149,28 @@ void TrainerEditor::timerCallback()
     }
 
     web.emitEventIfBrowserIsVisible ("midi", juce::var (events));
+}
+
+/** Live UI: every half second, reload the page once index.html has changed and then held still for one
+    check, so a save in progress is never loaded half-written. Progress survives: same origin, same profile. */
+void TrainerEditor::checkLiveUi()
+{
+    if (uiDir == juce::File() || ++uiCheckTicks < 30)
+        return;
+
+    uiCheckTicks = 0;
+    const auto modified = uiDir.getChildFile ("index.html").getLastModificationTime();
+
+    if (modified != uiSeen)
+    {
+        uiSeen = modified;
+        uiChanged = true;
+    }
+    else if (uiChanged)
+    {
+        uiChanged = false;
+        web.goToURL (juce::WebBrowserComponent::getResourceProviderRoot() + "?v=" + juce::String (modified.toMilliseconds()));
+    }
 }
 
 void TrainerEditor::handleUiEvent (const juce::var& payload)
@@ -223,13 +271,28 @@ void TrainerEditor::fillDisplay()
     }
 }
 
-std::optional<juce::WebBrowserComponent::Resource> TrainerEditor::getResource (const juce::String& urlIn)
+std::optional<juce::WebBrowserComponent::Resource> TrainerEditor::getResource (const juce::String& urlIn, const juce::File& uiDir)
 {
     auto path = urlIn.upToFirstOccurrenceOf ("?", false, false)
                      .trimCharactersAtStart ("/");
 
     if (path.isEmpty())
         path = "index.html";
+
+    const auto extension = path.fromLastOccurrenceOf (".", false, false).toLowerCase();
+
+    // Live UI: read the file from disk on every request; anything missing there falls back to the embedded copy.
+    if (uiDir != juce::File())
+    {
+        const auto file = uiDir.getChildFile (path);
+        juce::MemoryBlock data;
+
+        if (file.isAChildOf (uiDir) && file.existsAsFile() && file.loadFileAsData (data))
+        {
+            const auto* bytes = static_cast<const std::byte*> (data.getData());
+            return juce::WebBrowserComponent::Resource { std::vector<std::byte> (bytes, bytes + data.getSize()), mimeFor (extension) };
+        }
+    }
 
     for (int i = 0; i < TrainerAssets::namedResourceListSize; ++i)
     {
@@ -245,7 +308,6 @@ std::optional<juce::WebBrowserComponent::Resource> TrainerEditor::getResource (c
             break;
 
         const auto* bytes = reinterpret_cast<const std::byte*> (data);
-        const auto extension = path.fromLastOccurrenceOf (".", false, false).toLowerCase();
 
         return juce::WebBrowserComponent::Resource { std::vector<std::byte> (bytes, bytes + size),
                                                      mimeFor (extension) };
