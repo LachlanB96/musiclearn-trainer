@@ -166,9 +166,10 @@ Requirements:
 - Python 3 with `pip install cmake ninja` (the build script picks CMake and Ninja up from the
   Python packages, so no separate installs are needed).
 - A JUCE 8.0.8 checkout: `git clone --depth 1 --branch 8.0.8 https://github.com/juce-framework/JUCE.git`
-- The [Microsoft.Web.WebView2](https://www.nuget.org/packages/Microsoft.Web.WebView2/1.0.1901.177)
-  NuGet package (1.0.1901.177), extracted so that the `Microsoft.Web.WebView2.1.0.1901.177`
-  folder sits inside a directory of your choosing.
+- The [Microsoft.Web.WebView2](https://www.nuget.org/packages/Microsoft.Web.WebView2/1.0.4314.35)
+  NuGet package (1.0.4314.35), extracted so that the `Microsoft.Web.WebView2.1.0.4314.35`
+  folder sits inside a directory of your choosing. `CMakeLists.txt` pins that version
+  (`WEBVIEW2_SDK_VERSION`) and stops with the download link if the folder isn't there.
 
 By default `CMakeLists.txt` looks for JUCE at `%USERPROFILE%\Documents\git\JUCE` and the WebView2
 package under `%USERPROFILE%\Documents\git\_deps\webview2`. Either put them there or pass
