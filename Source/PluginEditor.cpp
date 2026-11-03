@@ -273,7 +273,7 @@ void TrainerEditor::fillDisplay()
 
     if (auto* display = displays.getDisplayForRect (getScreenBounds()))
     {
-        const auto area = display->userArea;
+        const auto area = display->userBounds.toNearestIntEdges();
         setSize (juce::jlimit (720, 4096, area.getWidth() - 24),
                  juce::jlimit (480, 4096, area.getHeight() - 110));
     }

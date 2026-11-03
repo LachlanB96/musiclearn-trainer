@@ -165,7 +165,8 @@ Requirements:
 - Visual Studio 2022 or later with the **Desktop development with C++** workload.
 - Python 3 with `pip install cmake ninja` (the build script picks CMake and Ninja up from the
   Python packages, so no separate installs are needed).
-- A JUCE 8.0.8 checkout: `git clone --depth 1 --branch 8.0.8 https://github.com/juce-framework/JUCE.git`
+- A JUCE 8.0.17 checkout: `git clone --depth 1 --branch 8.0.17-security https://github.com/juce-framework/JUCE.git`
+  (`CMakeLists.txt` pins that release as `JUCE_TAG` and stops if the checkout is another version).
 - The [Microsoft.Web.WebView2](https://www.nuget.org/packages/Microsoft.Web.WebView2/1.0.4314.35)
   NuGet package (1.0.4314.35), extracted so that the `Microsoft.Web.WebView2.1.0.4314.35`
   folder sits inside a directory of your choosing. `CMakeLists.txt` pins that version

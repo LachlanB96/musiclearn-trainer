@@ -9,8 +9,21 @@ set(JUCE_DIR "$ENV{USERPROFILE}/Documents/git/JUCE" CACHE PATH "Path to a JUCE 8
 set(JUCE_WEBVIEW2_PACKAGE_LOCATION "$ENV{USERPROFILE}/Documents/git/_deps/webview2"
     CACHE PATH "Folder that contains the Microsoft.Web.WebView2.* package directory")
 
+# The JUCE release this builds against (its git tag), checked against the version the checkout's own CMakeLists.txt
+# gives, so a build never quietly uses another JUCE.
+set(JUCE_TAG 8.0.17-security)
+string(REGEX MATCH "^[0-9]+\\.[0-9]+\\.[0-9]+" JUCE_REQUIRED_VERSION "${JUCE_TAG}")
+set(juce_clone_hint "git clone --depth 1 --branch ${JUCE_TAG} https://github.com/juce-framework/JUCE.git")
+
 if(NOT EXISTS "${JUCE_DIR}/CMakeLists.txt")
-    message(FATAL_ERROR "JUCE not found at ${JUCE_DIR}. Clone it: git clone --depth 1 --branch 8.0.8 https://github.com/juce-framework/JUCE.git")
+    message(FATAL_ERROR "JUCE not found at ${JUCE_DIR}. Clone it: ${juce_clone_hint}")
+endif()
+
+file(STRINGS "${JUCE_DIR}/CMakeLists.txt" juce_project_line REGEX "^project\\(JUCE VERSION ")
+string(REGEX MATCH "[0-9]+\\.[0-9]+\\.[0-9]+" juce_found_version "${juce_project_line}")
+if(NOT juce_found_version VERSION_EQUAL JUCE_REQUIRED_VERSION)
+    message(FATAL_ERROR "JUCE ${JUCE_REQUIRED_VERSION} needed, but ${JUCE_DIR} is JUCE '${juce_found_version}'. "
+                        "Clone the right one there: ${juce_clone_hint}")
 endif()
 
 # The WebView2 SDK version this builds against. JUCE's FindWebView2 caches the first package folder it finds,
