@@ -1,10 +1,12 @@
 @echo off
 setlocal
 rem Builds the VST3 + Standalone with MSVC (Visual Studio) via CMake + Ninja.
-rem Build output goes to %LOCALAPPDATA%\MusicLearnTrainer\build so the vault stays clean.
+rem Build output goes to %LOCALAPPDATA%\MusicLearnTrainer\build (what install.cmd installs), outside the source
+rem folder, or to TRAINER_BUILD_DIR when that's set (check.ts builds a worktree in a folder of its own).
 
 set "SRC=%~dp0"
 set "BUILD=%LOCALAPPDATA%\MusicLearnTrainer\build"
+if defined TRAINER_BUILD_DIR set "BUILD=%TRAINER_BUILD_DIR%"
 
 for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VS=%%i"
 if not defined VS ( echo Visual Studio with C++ tools not found & exit /b 1 )

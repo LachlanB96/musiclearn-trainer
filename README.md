@@ -191,6 +191,20 @@ locked DLL aside and Live picks up the new one the next time the plugin is loade
 The Standalone build is handy for testing without a host. Close Live before running it: Windows
 lets only one program hold a MIDI port.
 
+The Trainer keeps its WebView2 profile (your progress) and `ui-dir.txt` in
+`%LOCALAPPDATA%\MusicLearnTrainer`, or in the folder `MUSICLEARN_TRAINER_DATA` names (an absolute
+path) when that variable is set. `TRAINER_BUILD_DIR` moves `build.cmd`'s output the same way.
+
+### Checking a change
+
+`bun check.ts` is the check a change passes before it's merged: TypeScript over the check itself
+and its unit tests, then `build.cmd`, then a smoke test that opens the Standalone with a fresh data
+folder and asks its page, through WebView2's remote debugging port, whether it loaded as the
+plugin's (the JUCE bridge, the tabs, the Bravura font, events both ways between page and editor, no
+errors). It's written for the author's machine: it needs [Bun](https://bun.sh) and leans on tools
+from his own setup (a shared TypeScript config, a job queue for heavy work, a launcher that opens
+windows without taking focus), so elsewhere build with `build.cmd` and try the Standalone by hand.
+
 ### Working on the UI
 
 The whole UI is a single file, `ui/index.html`, embedded into the plugin at build time. To work on
@@ -245,6 +259,8 @@ CMakeLists.txt        JUCE plugin definition (VST3 + Standalone)
 build.cmd             one-shot MSVC + CMake + Ninja build
 install.cmd/.ps1      elevated copy into the system VST3 folder
 package.py            release zip (dist/) from the build output
+check.ts, test/       the check: type-check and unit tests, build, Standalone smoke test
+api.json, tsconfig.json  the check's place in the author's setup (its contract, its TypeScript)
 Source/               thin C++ shell: MIDI FIFO, host transport snapshot + WebView2 host
 ui/index.html         all UI and learning logic
 ui/Bravura.woff2      music notation font (SIL OFL)
